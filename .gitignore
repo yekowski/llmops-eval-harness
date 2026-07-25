@@ -1,0 +1,13 @@
+# Cache files
+cache/
+cache/prompt_hash/
+
+# Raw evaluation output traces (contains test data traces)
+outputs/raw/
+
+# Python caching
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/

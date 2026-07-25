@@ -1,0 +1,142 @@
+[
+  {
+    "query": "What is the capital of France?",
+    "context": "Paris is the capital and most populous city of France.",
+    "expected_answer": "Paris is the capital of France.",
+    "generated_answer": "The capital of France is Paris.",
+    "expected_pass_boolean": true
+  },
+  {
+    "query": "What is the speed of light?",
+    "context": "The speed of light in vacuum is approximately 299,792,458 meters per second.",
+    "expected_answer": "Approximately 299,792,458 meters per second.",
+    "generated_answer": "Light travels at 299,792,458 meters per second.",
+    "expected_pass_boolean": true
+  },
+  {
+    "query": "Who wrote Hamlet?",
+    "context": "Hamlet was written by William Shakespeare between 1599 and 1601.",
+    "expected_answer": "William Shakespeare wrote Hamlet.",
+    "generated_answer": "It was written by William Shakespeare.",
+    "expected_pass_boolean": true
+  },
+  {
+    "query": "What is the largest planet in our solar system?",
+    "context": "Jupiter is the fifth planet from the Sun and the largest in the Solar System.",
+    "expected_answer": "Jupiter is the largest planet.",
+    "generated_answer": "Jupiter is the largest planet in the solar system.",
+    "expected_pass_boolean": true
+  },
+  {
+    "query": "How many elements are in the periodic table?",
+    "context": "The periodic table has 118 confirmed elements.",
+    "expected_answer": "There are 118 elements.",
+    "generated_answer": "The periodic table contains 118 elements.",
+    "expected_pass_boolean": true
+  },
+  {
+    "query": "What is the chemical formula for water?",
+    "context": "Water is a chemical compound with the chemical formula H2O.",
+    "expected_answer": "The formula is H2O.",
+    "generated_answer": "The chemical formula for water is H2O.",
+    "expected_pass_boolean": true
+  },
+  {
+    "query": "Who painted the Mona Lisa?",
+    "context": "The Mona Lisa was painted by the Italian Renaissance artist Leonardo da Vinci.",
+    "expected_answer": "Leonardo da Vinci painted the Mona Lisa.",
+    "generated_answer": "The Mona Lisa was painted by Leonardo da Vinci.",
+    "expected_pass_boolean": true
+  },
+  {
+    "query": "What is the currency of Japan?",
+    "context": "The Japanese yen is the official currency of Japan.",
+    "expected_answer": "The official currency is the Japanese yen.",
+    "generated_answer": "The currency of Japan is the Japanese yen.",
+    "expected_pass_boolean": true
+  },
+  {
+    "query": "Which ocean is the largest?",
+    "context": "The Pacific Ocean is the largest and deepest of Earth's oceanic divisions.",
+    "expected_answer": "The Pacific Ocean is the largest ocean.",
+    "generated_answer": "The largest ocean is the Pacific Ocean.",
+    "expected_pass_boolean": true
+  },
+  {
+    "query": "Who was the first President of the United States?",
+    "context": "George Washington was the first president of the United States, serving from 1789 to 1797.",
+    "expected_answer": "George Washington was the first president.",
+    "generated_answer": "The first president of the United States was George Washington.",
+    "expected_pass_boolean": true
+  },
+  {
+    "query": "What is the capital of France?",
+    "context": "Paris is the capital and most populous city of France.",
+    "expected_answer": "Paris is the capital of France.",
+    "generated_answer": "London is the capital of United Kingdom.",
+    "expected_pass_boolean": false
+  },
+  {
+    "query": "What is the speed of light?",
+    "context": "The speed of light in vacuum is approximately 299,792,458 meters per second.",
+    "expected_answer": "Approximately 299,792,458 meters per second.",
+    "generated_answer": "Light travels at 300,000 kilometers per hour.",
+    "expected_pass_boolean": false
+  },
+  {
+    "query": "Who wrote Hamlet?",
+    "context": "Hamlet was written by William Shakespeare.",
+    "expected_answer": "William Shakespeare wrote Hamlet.",
+    "generated_answer": "Hamlet was written by Leo Tolstoy in Russia.",
+    "expected_pass_boolean": false
+  },
+  {
+    "query": "What is the largest planet in our solar system?",
+    "context": "Jupiter is the largest planet in our solar system.",
+    "expected_answer": "Jupiter is the largest planet.",
+    "generated_answer": "Mars is the red planet and is small.",
+    "expected_pass_boolean": false
+  },
+  {
+    "query": "How many elements are in the periodic table?",
+    "context": "The periodic table has 118 elements.",
+    "expected_answer": "There are 118 elements.",
+    "generated_answer": "There are ninety two naturally occurring items.",
+    "expected_pass_boolean": false
+  },
+  {
+    "query": "What is the chemical formula for water?",
+    "context": "Water is H2O.",
+    "expected_answer": "The formula is H2O.",
+    "generated_answer": "CO2 is carbon dioxide.",
+    "expected_pass_boolean": false
+  },
+  {
+    "query": "Who painted the Mona Lisa?",
+    "context": "The Mona Lisa was painted by Leonardo da Vinci.",
+    "expected_answer": "Leonardo da Vinci painted the Mona Lisa.",
+    "generated_answer": "Pablo Picasso painted Guernica.",
+    "expected_pass_boolean": false
+  },
+  {
+    "query": "What is the currency of Japan?",
+    "context": "The Japanese yen is the currency of Japan.",
+    "expected_answer": "The currency of Japan is the Japanese yen.",
+    "generated_answer": "The Euro is used in most European Union countries.",
+    "expected_pass_boolean": false
+  },
+  {
+    "query": "Which ocean is the largest?",
+    "context": "The Pacific Ocean is the largest ocean.",
+    "expected_answer": "The Pacific Ocean is the largest ocean.",
+    "generated_answer": "The Indian Ocean is warm.",
+    "expected_pass_boolean": false
+  },
+  {
+    "query": "Who was the first President of the United States?",
+    "context": "George Washington was the first president of the United States.",
+    "expected_answer": "George Washington was the first president.",
+    "generated_answer": "Abraham Lincoln was the sixteenth president.",
+    "expected_pass_boolean": false
+  }
+]

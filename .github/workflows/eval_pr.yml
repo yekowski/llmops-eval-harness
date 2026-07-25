@@ -1,0 +1,32 @@
+name: LLMOps CI/CD PR Evaluation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  run-evaluation:
+    name: Run LLMOps Evaluation SLAs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install httpx pydantic pyyaml
+
+      - name: Run Evaluation Harness
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PYTHONPATH: .
+        run: |
+          python run_eval.py --config configs/pr.yaml
