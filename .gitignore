@@ -1,3 +1,7 @@
+# Environment variables
+.env
+.env.*
+
 # Cache files
 cache/
 cache/prompt_hash/
