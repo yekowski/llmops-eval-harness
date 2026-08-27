@@ -113,6 +113,24 @@ async def main_async():
     avg_relevance = sum(r.answer_relevance for r in results) / total_count if total_count > 0 else 0.0
     avg_correctness = sum(r.correctness for r in results) / total_count if total_count > 0 else 0.0
 
+    # Load baseline
+    baseline_path = "baseline.json"
+    baseline = {}
+    if os.path.exists(baseline_path):
+        try:
+            with open(baseline_path, "r") as f:
+                baseline = json.load(f)
+        except Exception as e:
+            print(f"[WARNING] Could not parse baseline.json: {e}")
+
+    # Compute deltas
+    delta_pass_rate = (pass_rate_pct - baseline["pass_rate_pct"]) if "pass_rate_pct" in baseline else None
+    delta_latency = (avg_latency_ms - baseline["avg_latency_ms"]) if "avg_latency_ms" in baseline else None
+    delta_cost = (total_cost_usd - baseline["total_cost_usd"]) if "total_cost_usd" in baseline else None
+    delta_faithfulness = (avg_faithfulness - baseline["faithfulness"]) if "faithfulness" in baseline else None
+    delta_relevance = (avg_relevance - baseline["answer_relevance"]) if "answer_relevance" in baseline else None
+    delta_correctness = (avg_correctness - baseline["correctness"]) if "correctness" in baseline else None
+
     # 5. Check SLAs
     min_pass_rate = sla_thresholds.get("min_pass_rate", 0.0)
     min_faithfulness = sla_thresholds.get("min_faithfulness", 0.0)
@@ -120,6 +138,7 @@ async def main_async():
     min_correctness = sla_thresholds.get("min_correctness", 0.0)
     max_latency = sla_thresholds.get("max_latency_ms", float("inf"))
     max_cost = sla_thresholds.get("max_cost_usd", float("inf"))
+    max_score_drop = sla_thresholds.get("max_score_drop", float("inf"))
 
     failures = []
     pass_rate_ratio = passed_count / total_count if total_count > 0 else 0.0
@@ -137,6 +156,17 @@ async def main_async():
     if total_cost_usd > max_cost:
         failures.append(f"cost {total_cost_usd:.6f} > required {max_cost:.4f}")
 
+    # Check relative baseline regressions
+    if "faithfulness" in baseline and delta_faithfulness is not None:
+        if delta_faithfulness < -max_score_drop:
+            failures.append(f"Faithfulness dropped by {abs(delta_faithfulness):.2f} > allowed {max_score_drop:.2f} limit")
+    if "answer_relevance" in baseline and delta_relevance is not None:
+        if delta_relevance < -max_score_drop:
+            failures.append(f"Relevance dropped by {abs(delta_relevance):.2f} > allowed {max_score_drop:.2f} limit")
+    if "correctness" in baseline and delta_correctness is not None:
+        if delta_correctness < -max_score_drop:
+            failures.append(f"Correctness dropped by {abs(delta_correctness):.2f} > allowed {max_score_drop:.2f} limit")
+
     sla_passed = len(failures) == 0
 
     metrics = {
@@ -148,7 +178,13 @@ async def main_async():
         "sla_passed": sla_passed,
         "avg_faithfulness": avg_faithfulness,
         "avg_relevance": avg_relevance,
-        "avg_correctness": avg_correctness
+        "avg_correctness": avg_correctness,
+        "delta_pass_rate_pct": delta_pass_rate,
+        "delta_latency_ms": delta_latency,
+        "delta_cost_usd": delta_cost,
+        "delta_faithfulness": delta_faithfulness,
+        "delta_relevance": delta_relevance,
+        "delta_correctness": delta_correctness
     }
 
     # 6. Generate and output Markdown report
@@ -165,6 +201,22 @@ async def main_async():
             print(f"Reason: {failure}")
         sys.exit(1)
     else:
+        # Save baseline.json only if SLA checks and regression checks pass
+        new_baseline = {
+            "pass_rate_pct": pass_rate_pct,
+            "avg_latency_ms": avg_latency_ms,
+            "total_cost_usd": total_cost_usd,
+            "faithfulness": avg_faithfulness,
+            "answer_relevance": avg_relevance,
+            "correctness": avg_correctness
+        }
+        try:
+            with open(baseline_path, "w") as f:
+                json.dump(new_baseline, f, indent=2)
+            print(f"Saved new baseline scores to {baseline_path}")
+        except Exception as e:
+            print(f"[WARNING] Could not save baseline.json: {e}")
+
         print("✅ SLA check PASSED! Ready for integration.")
         sys.exit(0)
 
