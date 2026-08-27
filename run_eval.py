@@ -36,10 +36,7 @@ async def main_async():
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
     
-    sla = config.get("sla", {})
-    min_pass_rate = sla.get("min_pass_rate_pct", 90.0)
-    max_latency = sla.get("max_latency_ms", 2000.0)
-    max_cost = sla.get("max_cost_usd", 0.50)
+    sla_thresholds = config.get("sla_thresholds", {})
 
     # 2. Load dataset
     if not os.path.exists(args.dataset):
@@ -117,10 +114,30 @@ async def main_async():
     avg_correctness = sum(r.correctness for r in results) / total_count if total_count > 0 else 0.0
 
     # 5. Check SLAs
-    pass_rate_ok = pass_rate_pct >= min_pass_rate
-    latency_ok = avg_latency_ms <= max_latency
-    cost_ok = total_cost_usd <= max_cost
-    sla_passed = pass_rate_ok and latency_ok and cost_ok
+    min_pass_rate = sla_thresholds.get("min_pass_rate", 0.0)
+    min_faithfulness = sla_thresholds.get("min_faithfulness", 0.0)
+    min_relevance = sla_thresholds.get("min_relevance", 0.0)
+    min_correctness = sla_thresholds.get("min_correctness", 0.0)
+    max_latency = sla_thresholds.get("max_latency_ms", float("inf"))
+    max_cost = sla_thresholds.get("max_cost_usd", float("inf"))
+
+    failures = []
+    pass_rate_ratio = passed_count / total_count if total_count > 0 else 0.0
+
+    if pass_rate_ratio < min_pass_rate:
+        failures.append(f"pass_rate {pass_rate_ratio:.2f} < required {min_pass_rate:.2f}")
+    if avg_faithfulness < min_faithfulness:
+        failures.append(f"faithfulness {avg_faithfulness:.2f} < required {min_faithfulness:.2f}")
+    if avg_relevance < min_relevance:
+        failures.append(f"relevance {avg_relevance:.2f} < required {min_relevance:.2f}")
+    if avg_correctness < min_correctness:
+        failures.append(f"correctness {avg_correctness:.2f} < required {min_correctness:.2f}")
+    if avg_latency_ms > max_latency:
+        failures.append(f"latency {avg_latency_ms:.2f} ms > required {max_latency:.2f} ms")
+    if total_cost_usd > max_cost:
+        failures.append(f"cost {total_cost_usd:.6f} > required {max_cost:.4f}")
+
+    sla_passed = len(failures) == 0
 
     metrics = {
         "pass_rate_pct": pass_rate_pct,
@@ -135,7 +152,7 @@ async def main_async():
     }
 
     # 6. Generate and output Markdown report
-    markdown_report = generate_markdown_report(metrics, sla)
+    markdown_report = generate_markdown_report(metrics, sla_thresholds)
     print("\n" + markdown_report)
 
     # 7. Write to GITHUB_STEP_SUMMARY for CI/CD integrations
@@ -144,6 +161,8 @@ async def main_async():
     # 8. Exit with non-zero code on SLA failure to fail the PR build
     if not sla_passed:
         print("❌ SLA check FAILED! Blocking integration.")
+        for failure in failures:
+            print(f"Reason: {failure}")
         sys.exit(1)
     else:
         print("✅ SLA check PASSED! Ready for integration.")
