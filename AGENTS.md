@@ -25,3 +25,6 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 ## Multi-Provider Model Adapters
 1. **Architecture**: Strict separation of concerns. External model calls must route through abstract Provider adapters. Never hardcode `httpx` in business logic.
 2. **Rule**: Always implement graceful degradation and exponential backoff for remote APIs.
+
+## SLA Configuration
+- Rule 4 (SLA Configuration): Never hardcode evaluation thresholds in Python logic. All SLA gates (faithfulness, latency, cost, etc.) must be dynamically loaded from the YAML configuration.
