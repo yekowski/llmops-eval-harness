@@ -13,6 +13,9 @@ def generate_markdown_report(metrics: dict, sla: dict) -> str:
 | **Pass Rate** | >= {sla['min_pass_rate_pct']}% | {metrics['pass_rate_pct']:.2f}% ({metrics['passed_count']}/{metrics['total_count']}) | {pass_rate_status} |
 | **Average Latency** | <= {sla['max_latency_ms']} ms | {metrics['avg_latency_ms']:.2f} ms | {latency_status} |
 | **Total Evaluation Cost** | <= ${sla['max_cost_usd']:.4f} | ${metrics['total_cost_usd']:.6f} | {cost_status} |
+| **Average Faithfulness** | - | {metrics['avg_faithfulness']:.2f} / 1.0 | - |
+| **Average Relevance** | - | {metrics['avg_relevance']:.2f} / 1.0 | - |
+| **Average Correctness** | - | {metrics['avg_correctness']:.2f} / 1.0 | - |
 
 **Overall SLA Status: {overall_status}**
 """

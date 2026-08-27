@@ -54,6 +54,12 @@ class GeminiJudge:
                 
             result = json.loads(cleaned_response)
 
+        # Extract multi-metric scores and dynamically evaluate pass/fail
+        faithfulness = result.get("faithfulness", 0.0)
+        relevance = result.get("answer_relevance", 0.0)
+        correctness = result.get("correctness", 0.0)
+        result["passed"] = (faithfulness >= 0.8 and relevance >= 0.8 and correctness >= 0.8)
+
         # Calculate cost for the call (input prompt and output text)
         input_tokens = max(1, len(prompt) // 4)
         output_tokens = max(1, len(json.dumps(result)) // 4)
@@ -103,20 +109,18 @@ class GeminiJudge:
         gen_words -= stop_words
         exp_words -= stop_words
 
+        overlap = len(gen_words.intersection(exp_words)) / len(exp_words) if exp_words else 0.0
+        
+        # Set a pass score of 0.9 if overlap threshold is met or it is mock SUT response style
+        score = 0.9 if (overlap >= 0.45 or "mocked response" in generated_answer.lower()) else 0.5
         if not exp_words:
-            return {"passed": True, "explanation": "Fallback: Empty expected answer."}
-
-        overlap = len(gen_words.intersection(exp_words)) / len(exp_words)
-        
-        # If the generated answer explicitly contradicts or is mock SUT response
-        if "mocked response" in generated_answer.lower():
-            # For MockRAGClient testing, we count it as passed
-            return {"passed": True, "explanation": "Fallback: Matches mock SUT response style."}
-
-        # Threshold of 45% overlap for passing
-        passed = overlap >= 0.45
-        
+            score = 1.0
+            
         return {
-            "passed": passed,
-            "explanation": f"Fallback: Local word overlap is {overlap:.2f} (Threshold 0.45)."
+            "faithfulness": score,
+            "faithfulness_reasoning": f"Fallback: Local word overlap score is {overlap:.2f}.",
+            "answer_relevance": score,
+            "answer_relevance_reasoning": f"Fallback: Local word overlap score is {overlap:.2f}.",
+            "correctness": score,
+            "correctness_reasoning": f"Fallback: Local word overlap score is {overlap:.2f}."
         }

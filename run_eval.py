@@ -100,6 +100,10 @@ async def main_async():
     pass_rate_pct = (passed_count / total_count) * 100 if total_count > 0 else 0.0
     avg_latency_ms = (sum(r.latency for r in results) / total_count) * 1000 if total_count > 0 else 0.0
     total_cost_usd = judge.total_cost
+    
+    avg_faithfulness = sum(r.faithfulness for r in results) / total_count if total_count > 0 else 0.0
+    avg_relevance = sum(r.answer_relevance for r in results) / total_count if total_count > 0 else 0.0
+    avg_correctness = sum(r.correctness for r in results) / total_count if total_count > 0 else 0.0
 
     # 5. Check SLAs
     pass_rate_ok = pass_rate_pct >= min_pass_rate
@@ -113,7 +117,10 @@ async def main_async():
         "total_cost_usd": total_cost_usd,
         "passed_count": passed_count,
         "total_count": total_count,
-        "sla_passed": sla_passed
+        "sla_passed": sla_passed,
+        "avg_faithfulness": avg_faithfulness,
+        "avg_relevance": avg_relevance,
+        "avg_correctness": avg_correctness
     }
 
     # 6. Generate and output Markdown report

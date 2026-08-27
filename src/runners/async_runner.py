@@ -76,11 +76,24 @@ async def run_evaluation(
                             raise last_exception if last_exception else Exception("LLM Judge call failed after 3 attempts")
                     
                     passed = judge_res.get("passed", False)
+                    faithfulness = judge_res.get("faithfulness", 0.0)
+                    relevance = judge_res.get("answer_relevance", 0.0)
+                    correctness = judge_res.get("correctness", 0.0)
                 else:
                     # In Phase 1 / Fallback, we count a successful execution as 'passed'
                     passed = True
+                    faithfulness = 1.0
+                    relevance = 1.0
+                    correctness = 1.0
                     
-                return EvaluationResult(passed=passed, latency=latency, tokens=tokens)
+                return EvaluationResult(
+                    passed=passed,
+                    latency=latency,
+                    tokens=tokens,
+                    faithfulness=faithfulness,
+                    answer_relevance=relevance,
+                    correctness=correctness
+                )
             except Exception:
                 latency = time.perf_counter() - start_time
                 return EvaluationResult(passed=False, latency=latency, tokens=0)
