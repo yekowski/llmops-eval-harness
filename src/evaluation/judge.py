@@ -59,13 +59,26 @@ class GeminiJudge:
         output_tokens = max(1, len(json.dumps(result)) // 4)
         
         # Determine pricing based on the provider and model
-        pricing_input = 0.000075 / 1000.0
+        pricing_input = 0.000075 / 1000.0  # Default to gemini-3.5-flash
         pricing_output = 0.000300 / 1000.0
         
-        if hasattr(self.provider, "model") and "deepseek" in str(self.provider.model).lower():
-            # DeepSeek Chat pricing: $0.14 / 1M input tokens, $0.28 / 1M output tokens
-            pricing_input = 0.000140 / 1000.0
-            pricing_output = 0.000280 / 1000.0
+        if hasattr(self.provider, "model"):
+            model_name = str(self.provider.model).lower()
+            if "deepseek" in model_name:
+                pricing_input = 0.000140 / 1000.0
+                pricing_output = 0.000280 / 1000.0
+            elif "gpt-" in model_name:
+                pricing_input = 0.005000 / 1000.0
+                pricing_output = 0.015000 / 1000.0
+            elif "claude-" in model_name:
+                pricing_input = 0.003000 / 1000.0
+                pricing_output = 0.015000 / 1000.0
+            elif "llama" in model_name or "groq" in model_name:
+                pricing_input = 0.000050 / 1000.0
+                pricing_output = 0.000080 / 1000.0
+            elif "qwen" in model_name:
+                pricing_input = 0.000070 / 1000.0
+                pricing_output = 0.000070 / 1000.0
             
         call_cost = input_tokens * pricing_input + output_tokens * pricing_output
         self.total_cost += call_cost
