@@ -1,4 +1,6 @@
 # SLA Threshold Configuration for PR Validation
+dataset_path: "data/adversarial_eval.json"
+
 sla_thresholds:
   min_faithfulness: 0.85
   min_relevance: 0.80
@@ -6,6 +8,7 @@ sla_thresholds:
   min_pass_rate: 0.90
   max_latency_ms: 3000
   max_cost_usd: 0.05
+  max_score_drop: 0.03
 
 fallback_chain:
   - "gemini"

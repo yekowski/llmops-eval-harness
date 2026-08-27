@@ -39,11 +39,12 @@ async def main_async():
     sla_thresholds = config.get("sla_thresholds", {})
 
     # 2. Load dataset
-    if not os.path.exists(args.dataset):
-        print(f"Error: Dataset not found at {args.dataset}")
+    dataset_path = config.get("dataset_path", args.dataset)
+    if not os.path.exists(dataset_path):
+        print(f"Error: Dataset not found at {dataset_path}")
         sys.exit(1)
         
-    with open(args.dataset, "r") as f:
+    with open(dataset_path, "r") as f:
         dataset = json.load(f)
 
     # Convert dataset entries to Pydantic objects

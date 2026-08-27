@@ -28,3 +28,6 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 
 ## SLA Configuration
 - Rule 4 (SLA Configuration): Never hardcode evaluation thresholds in Python logic. All SLA gates (faithfulness, latency, cost, etc.) must be dynamically loaded from the YAML configuration.
+
+## Data Management
+- Rule 5 (Data Management): Never hardcode evaluation datasets or test cases in Python logic. All evaluation runners must dynamically load their datasets from the file path specified in the YAML configuration (e.g., dataset_path).
