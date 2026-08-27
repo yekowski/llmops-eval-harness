@@ -29,4 +29,4 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PYTHONPATH: .
         run: |
-          python run_eval.py --config configs/pr.yaml
+          PYTHONPATH=. python run_eval.py --config configs/pr.yaml
