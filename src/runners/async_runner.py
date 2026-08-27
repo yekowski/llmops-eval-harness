@@ -1,5 +1,7 @@
 import asyncio
 import time
+import httpx
+import random
 from typing import List, Optional
 from src.schemas.models import DatasetEntry, EvaluationResult
 from src.clients.base import SystemUnderTest
@@ -29,32 +31,69 @@ async def run_evaluation(
                 if judge:
                     # Check cache first to avoid rate limiting cache hits
                     is_cached = False
+                    judge_res = None
                     if judge.cache:
                         cached = judge.cache.get(entry.expected_answer, entry.expected_context, response)
                         if cached is not None:
                             is_cached = True
+                            judge_res = cached
                     
                     if not is_cached:
-                        async with rate_limit_lock:
-                            now = time.perf_counter()
-                            elapsed = now - last_request_time
-                            # Ensure at least 4.0 seconds (15 RPM) have elapsed since the last API request started
-                            if elapsed < 4.0:
-                                await asyncio.sleep(4.0 - elapsed)
-                            last_request_time = time.perf_counter()
+                        last_exception = None
+                        for attempt in range(3):
+                            async with rate_limit_lock:
+                                now = time.perf_counter()
+                                elapsed = now - last_request_time
+                                # Ensure at least 4.5 seconds have elapsed since the last API request started
+                                if elapsed < 4.5:
+                                    await asyncio.sleep(4.5 - elapsed)
+                                last_request_time = time.perf_counter()
+                            
+                            try:
+                                # Grade the SUT response using the Gemini LLM Judge
+                                judge_res = await judge.evaluate(
+                                    context=entry.expected_context,
+                                    expected_answer=entry.expected_answer,
+                                    generated_answer=response
+                                )
+                                break  # Succeeded, exit loop
+                            except Exception as e:
+                                last_exception = e
+                                is_429 = False
+                                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
+                                    is_429 = True
+                                
+                                if attempt < 2:
+                                    delay = (2 ** attempt) + random.uniform(0.5, 2.0)
+                                    err_type = "429 rate limit" if is_429 else "error"
+                                    print(f"\n[WARNING] LLM Judge hit {err_type}. Retrying in {delay:.2f} seconds (attempt {attempt + 1}/3)...")
+                                    await asyncio.sleep(delay)
+                                    continue
+                                else:
+                                    raise
+                        
+                        if judge_res is None:
+                            raise last_exception if last_exception else Exception("LLM Judge call failed after 3 attempts")
                     
-                    # Grade the SUT response using the Gemini LLM Judge
-                    judge_res = await judge.evaluate(
-                        context=entry.expected_context,
-                        expected_answer=entry.expected_answer,
-                        generated_answer=response
-                    )
                     passed = judge_res.get("passed", False)
+                    faithfulness = judge_res.get("faithfulness", 0.0)
+                    relevance = judge_res.get("answer_relevance", 0.0)
+                    correctness = judge_res.get("correctness", 0.0)
                 else:
                     # In Phase 1 / Fallback, we count a successful execution as 'passed'
                     passed = True
+                    faithfulness = 1.0
+                    relevance = 1.0
+                    correctness = 1.0
                     
-                return EvaluationResult(passed=passed, latency=latency, tokens=tokens)
+                return EvaluationResult(
+                    passed=passed,
+                    latency=latency,
+                    tokens=tokens,
+                    faithfulness=faithfulness,
+                    answer_relevance=relevance,
+                    correctness=correctness
+                )
             except Exception:
                 latency = time.perf_counter() - start_time
                 return EvaluationResult(passed=False, latency=latency, tokens=0)

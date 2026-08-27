@@ -3,3 +3,8 @@ sla:
   max_latency_ms: 2000
   min_pass_rate_pct: 90
   max_cost_usd: 0.50
+
+fallback_chain:
+  - "gemini"
+  - "groq"
+  - "mock"

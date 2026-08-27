@@ -1,22 +1,23 @@
 import os
 import json
-import httpx
-import asyncio
 from typing import Optional
 from src.evaluation.prompts.judge_templates import JUDGE_PROMPT_TEMPLATE
 from src.cache.prompt_hash import PromptHashCache
+from src.providers.base import LLMProvider
+from src.providers.gemini import GeminiProvider
+from src.providers.deepseek import DeepSeekProvider
 
 class GeminiJudge:
     def __init__(
         self,
+        provider: Optional[LLMProvider] = None,
         api_key: Optional[str] = None,
         model: str = "gemini-3.5-flash",
         cache: Optional[PromptHashCache] = None
     ):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        self.model = model
         self.cache = cache
         self.total_cost = 0.0
+        self.provider = provider or GeminiProvider(api_key=api_key, model=model)
 
     async def evaluate(self, context: str, expected_answer: str, generated_answer: str) -> dict:
         """Evaluates a generated response against context and expected answer."""
@@ -35,72 +36,61 @@ class GeminiJudge:
             answer=generated_answer
         )
 
-        # Fallback to local rule-based grading if API key is not present
-        if not self.api_key:
+        # Fallback to local rule-based grading if API key is not present in the provider
+        if hasattr(self.provider, "api_key") and not self.provider.api_key:
             result = self._local_deterministic_grade(context, expected_answer, generated_answer)
         else:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "responseMimeType": "application/json"
-                }
-            }
+            text_response = await self.provider.generate(prompt)
+            
+            # Strip Markdown JSON fences if present
+            cleaned_response = text_response.strip()
+            if cleaned_response.startswith("```"):
+                lines = cleaned_response.splitlines()
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].startswith("```"):
+                    lines = lines[:-1]
+                cleaned_response = "\n".join(lines).strip()
+                
+            result = json.loads(cleaned_response)
 
-            result = None
-            for attempt in range(2):
-                try:
-                    async with httpx.AsyncClient() as client:
-                        response = await client.post(url, json=payload, timeout=30.0)
-                        
-                        # Handle 429 Rate Limit specifically
-                        if response.status_code == 429:
-                            if attempt == 0:
-                                print("\n[WARNING] LLM Judge hit 429 rate limit. Retrying in 5 seconds...")
-                                await asyncio.sleep(5.0)
-                                continue
-                        
-                        response.raise_for_status()
-                        data = response.json()
-                        text_response = data["candidates"][0]["content"]["parts"][0]["text"]
-                        
-                        # Strip Markdown JSON fences if present
-                        cleaned_response = text_response.strip()
-                        if cleaned_response.startswith("```"):
-                            lines = cleaned_response.splitlines()
-                            if lines[0].startswith("```"):
-                                lines = lines[1:]
-                            if lines and lines[-1].startswith("```"):
-                                lines = lines[:-1]
-                            cleaned_response = "\n".join(lines).strip()
-                            
-                        result = json.loads(cleaned_response)
-                        break  # Succeeded, exit loop
-                except Exception as e:
-                    if attempt == 1:
-                        # Fail on final retry attempt
-                        result = {
-                            "passed": False,
-                            "explanation": f"LLM API call failed after retry: {str(e)}. Fallback to fail."
-                        }
-                    else:
-                        # For non-429 exceptions, fail immediately
-                        result = {
-                            "passed": False,
-                            "explanation": f"LLM API call failed: {str(e)}. Fallback to fail."
-                        }
-                        break
+        # Extract multi-metric scores and dynamically evaluate pass/fail
+        faithfulness = result.get("faithfulness", 0.0)
+        relevance = result.get("answer_relevance", 0.0)
+        correctness = result.get("correctness", 0.0)
+        result["passed"] = (faithfulness >= 0.8 and relevance >= 0.8 and correctness >= 0.8)
 
         # Calculate cost for the call (input prompt and output text)
         input_tokens = max(1, len(prompt) // 4)
         output_tokens = max(1, len(json.dumps(result)) // 4)
         
-        # gemini-3.5-flash pricing: $0.075 / 1M input tokens, $0.30 / 1M output tokens
-        call_cost = (input_tokens / 1000.0) * 0.000075 + (output_tokens / 1000.0) * 0.000300
+        # Determine pricing based on the provider and model
+        pricing_input = 0.000075 / 1000.0  # Default to gemini-3.5-flash
+        pricing_output = 0.000300 / 1000.0
+        
+        if hasattr(self.provider, "model"):
+            model_name = str(self.provider.model).lower()
+            if "deepseek" in model_name:
+                pricing_input = 0.000140 / 1000.0
+                pricing_output = 0.000280 / 1000.0
+            elif "gpt-" in model_name:
+                pricing_input = 0.005000 / 1000.0
+                pricing_output = 0.015000 / 1000.0
+            elif "claude-" in model_name:
+                pricing_input = 0.003000 / 1000.0
+                pricing_output = 0.015000 / 1000.0
+            elif "llama" in model_name or "groq" in model_name:
+                pricing_input = 0.000050 / 1000.0
+                pricing_output = 0.000080 / 1000.0
+            elif "qwen" in model_name:
+                pricing_input = 0.000070 / 1000.0
+                pricing_output = 0.000070 / 1000.0
+            
+        call_cost = input_tokens * pricing_input + output_tokens * pricing_output
         self.total_cost += call_cost
 
-        # Cache results if caching is enabled and the call didn't fail
-        if self.cache and not result.get("explanation", "").startswith("LLM API call failed"):
+        # Cache results if caching is enabled
+        if self.cache:
             self.cache.set(expected_answer, context, generated_answer, result)
 
         return result
@@ -119,20 +109,18 @@ class GeminiJudge:
         gen_words -= stop_words
         exp_words -= stop_words
 
+        overlap = len(gen_words.intersection(exp_words)) / len(exp_words) if exp_words else 0.0
+        
+        # Set a pass score of 0.9 if overlap threshold is met or it is mock SUT response style
+        score = 0.9 if (overlap >= 0.45 or "mocked response" in generated_answer.lower()) else 0.5
         if not exp_words:
-            return {"passed": True, "explanation": "Fallback: Empty expected answer."}
-
-        overlap = len(gen_words.intersection(exp_words)) / len(exp_words)
-        
-        # If the generated answer explicitly contradicts or is mock SUT response
-        if "mocked response" in generated_answer.lower():
-            # For MockRAGClient testing, we count it as passed
-            return {"passed": True, "explanation": "Fallback: Matches mock SUT response style."}
-
-        # Threshold of 45% overlap for passing
-        passed = overlap >= 0.45
-        
+            score = 1.0
+            
         return {
-            "passed": passed,
-            "explanation": f"Fallback: Local word overlap is {overlap:.2f} (Threshold 0.45)."
+            "faithfulness": score,
+            "faithfulness_reasoning": f"Fallback: Local word overlap score is {overlap:.2f}.",
+            "answer_relevance": score,
+            "answer_relevance_reasoning": f"Fallback: Local word overlap score is {overlap:.2f}.",
+            "correctness": score,
+            "correctness_reasoning": f"Fallback: Local word overlap score is {overlap:.2f}."
         }

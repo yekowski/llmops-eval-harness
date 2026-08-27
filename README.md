@@ -81,3 +81,5 @@ On every Pull Request to the `main` branch, the [eval_pr.yml](file://.github/wor
 3. Triggers the SLA check via `run_eval.py`.
 4. Writes a clean Markdown summary table directly to the **GitHub Actions PR Summary page**.
 5. Exits with code `1` if SLAs are violated, failing the build and blocking PR merge.
+
+Testing GitHub Actions CI/CD.

@@ -60,9 +60,47 @@ async def main_async():
     ]
 
     # 3. Instantiate SUT, Cache, and Judge
-    sut = MockRAGClient()
     cache = PromptHashCache()
-    judge = GeminiJudge(cache=cache)
+    
+    # Initialize LLM Provider fallback chain if configured
+    provider = None
+    fallback_chain = config.get("fallback_chain")
+    if fallback_chain:
+        from src.providers import GeminiProvider, OpenAIProvider, DeepSeekProvider, GroqProvider, QwenProvider, AnthropicProvider, MockProvider, ProviderRouter
+        chain_instances = []
+        for name in fallback_chain:
+            name_lower = name.lower()
+            if name_lower == "gemini":
+                chain_instances.append(GeminiProvider())
+            elif name_lower == "openai":
+                chain_instances.append(OpenAIProvider())
+            elif name_lower == "deepseek":
+                chain_instances.append(DeepSeekProvider())
+            elif name_lower == "groq":
+                chain_instances.append(GroqProvider())
+            elif name_lower == "qwen":
+                chain_instances.append(QwenProvider())
+            elif name_lower == "anthropic":
+                chain_instances.append(AnthropicProvider())
+            elif name_lower == "mock":
+                chain_instances.append(MockProvider())
+            else:
+                raise ValueError(f"Unknown provider name '{name}' in config fallback_chain.")
+        provider = ProviderRouter(chain_instances)
+
+    # Initialize SUT wrapping the fallback provider router if configured
+    if provider:
+        from src.clients.base import SystemUnderTest
+        class LLMProviderSUT(SystemUnderTest):
+            def __init__(self, prov):
+                self.prov = prov
+            async def execute(self, query: str) -> str:
+                return await self.prov.generate(query)
+        sut = LLMProviderSUT(provider)
+    else:
+        sut = MockRAGClient()
+
+    judge = GeminiJudge(provider=provider, cache=cache)
 
     print(f"Running evaluation of {len(entries)} entries concurrently against SUT...")
     results = await run_evaluation(entries, sut, judge)
@@ -73,6 +111,10 @@ async def main_async():
     pass_rate_pct = (passed_count / total_count) * 100 if total_count > 0 else 0.0
     avg_latency_ms = (sum(r.latency for r in results) / total_count) * 1000 if total_count > 0 else 0.0
     total_cost_usd = judge.total_cost
+    
+    avg_faithfulness = sum(r.faithfulness for r in results) / total_count if total_count > 0 else 0.0
+    avg_relevance = sum(r.answer_relevance for r in results) / total_count if total_count > 0 else 0.0
+    avg_correctness = sum(r.correctness for r in results) / total_count if total_count > 0 else 0.0
 
     # 5. Check SLAs
     pass_rate_ok = pass_rate_pct >= min_pass_rate
@@ -86,7 +128,10 @@ async def main_async():
         "total_cost_usd": total_cost_usd,
         "passed_count": passed_count,
         "total_count": total_count,
-        "sla_passed": sla_passed
+        "sla_passed": sla_passed,
+        "avg_faithfulness": avg_faithfulness,
+        "avg_relevance": avg_relevance,
+        "avg_correctness": avg_correctness
     }
 
     # 6. Generate and output Markdown report
