@@ -1,7 +1,7 @@
 import os
 import httpx
 from typing import Optional
-from src.providers.base import LLMProvider
+from src.providers.base import LLMProvider, ProviderRateLimitError, ProviderAPIError
 
 class AnthropicProvider(LLMProvider):
     def __init__(
@@ -16,7 +16,7 @@ class AnthropicProvider(LLMProvider):
 
     async def generate(self, prompt: str, **kwargs) -> str:
         if not self.api_key:
-            raise ValueError("Anthropic API key is required but not set.")
+            raise ProviderAPIError("Anthropic API key is required but not set.")
             
         url = "https://api.anthropic.com/v1/messages"
         headers = {
@@ -38,8 +38,16 @@ class AnthropicProvider(LLMProvider):
         if system_prompt:
             payload["system"] = system_prompt
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers, timeout=30.0)
-            response.raise_for_status()
-            data = response.json()
-            return data["content"][0]["text"]
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload, headers=headers, timeout=30.0)
+                response.raise_for_status()
+                data = response.json()
+                return data["content"][0]["text"]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                raise ProviderRateLimitError(f"Anthropic API rate limited: {str(e)}")
+            else:
+                raise ProviderAPIError(f"Anthropic API HTTP error {e.response.status_code}: {str(e)}")
+        except httpx.RequestError as e:
+            raise ProviderAPIError(f"Anthropic API request error: {str(e)}")

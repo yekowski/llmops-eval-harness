@@ -1,7 +1,7 @@
 import os
 import httpx
 from typing import Optional
-from src.providers.base import LLMProvider
+from src.providers.base import LLMProvider, ProviderRateLimitError, ProviderAPIError
 
 class OpenAICompatibleProvider(LLMProvider):
     def __init__(
@@ -18,7 +18,7 @@ class OpenAICompatibleProvider(LLMProvider):
 
     async def generate(self, prompt: str, **kwargs) -> str:
         if not self.api_key:
-            raise ValueError(f"API key is required but not set (checked env var {self.api_key_env_var}).")
+            raise ProviderAPIError(f"API key is required but not set (checked env var {self.api_key_env_var}).")
             
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         headers = {
@@ -35,8 +35,16 @@ class OpenAICompatibleProvider(LLMProvider):
             }
         }
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers, timeout=30.0)
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload, headers=headers, timeout=30.0)
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                raise ProviderRateLimitError(f"{self.__class__.__name__} rate limited: {str(e)}")
+            else:
+                raise ProviderAPIError(f"{self.__class__.__name__} HTTP error {e.response.status_code}: {str(e)}")
+        except httpx.RequestError as e:
+            raise ProviderAPIError(f"{self.__class__.__name__} request error: {str(e)}")

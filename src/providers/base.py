@@ -1,5 +1,13 @@
 from abc import ABC, abstractmethod
 
+class ProviderRateLimitError(Exception):
+    """Exception raised when a provider is rate limited (HTTP 429)."""
+    pass
+
+class ProviderAPIError(Exception):
+    """Exception raised for other API/HTTP errors from the provider."""
+    pass
+
 class LLMProvider(ABC):
     @abstractmethod
     async def generate(self, prompt: str, **kwargs) -> str:

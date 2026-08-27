@@ -62,7 +62,34 @@ async def main_async():
     # 3. Instantiate SUT, Cache, and Judge
     sut = MockRAGClient()
     cache = PromptHashCache()
-    judge = GeminiJudge(cache=cache)
+    
+    # Initialize LLM Provider fallback chain if configured
+    provider = None
+    fallback_chain = config.get("fallback_chain")
+    if fallback_chain:
+        from src.providers import GeminiProvider, OpenAIProvider, DeepSeekProvider, GroqProvider, QwenProvider, AnthropicProvider, MockProvider, ProviderRouter
+        chain_instances = []
+        for name in fallback_chain:
+            name_lower = name.lower()
+            if name_lower == "gemini":
+                chain_instances.append(GeminiProvider())
+            elif name_lower == "openai":
+                chain_instances.append(OpenAIProvider())
+            elif name_lower == "deepseek":
+                chain_instances.append(DeepSeekProvider())
+            elif name_lower == "groq":
+                chain_instances.append(GroqProvider())
+            elif name_lower == "qwen":
+                chain_instances.append(QwenProvider())
+            elif name_lower == "anthropic":
+                chain_instances.append(AnthropicProvider())
+            elif name_lower == "mock":
+                chain_instances.append(MockProvider())
+            else:
+                raise ValueError(f"Unknown provider name '{name}' in config fallback_chain.")
+        provider = ProviderRouter(chain_instances)
+
+    judge = GeminiJudge(provider=provider, cache=cache)
 
     print(f"Running evaluation of {len(entries)} entries concurrently against SUT...")
     results = await run_evaluation(entries, sut, judge)
