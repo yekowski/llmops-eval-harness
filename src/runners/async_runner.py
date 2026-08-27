@@ -38,9 +38,9 @@ async def run_evaluation(
                         async with rate_limit_lock:
                             now = time.perf_counter()
                             elapsed = now - last_request_time
-                            # Ensure at least 4.0 seconds (15 RPM) have elapsed since the last API request started
-                            if elapsed < 4.0:
-                                await asyncio.sleep(4.0 - elapsed)
+                            # Ensure at least 4.5 seconds have elapsed since the last API request started
+                            if elapsed < 4.5:
+                                await asyncio.sleep(4.5 - elapsed)
                             last_request_time = time.perf_counter()
                     
                     # Grade the SUT response using the Gemini LLM Judge

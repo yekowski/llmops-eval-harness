@@ -2,6 +2,7 @@ import os
 import json
 import httpx
 import asyncio
+import random
 from typing import Optional
 from src.evaluation.prompts.judge_templates import JUDGE_PROMPT_TEMPLATE
 from src.cache.prompt_hash import PromptHashCache
@@ -48,16 +49,17 @@ class GeminiJudge:
             }
 
             result = None
-            for attempt in range(2):
+            for attempt in range(4):
                 try:
                     async with httpx.AsyncClient() as client:
                         response = await client.post(url, json=payload, timeout=30.0)
                         
                         # Handle 429 Rate Limit specifically
                         if response.status_code == 429:
-                            if attempt == 0:
-                                print("\n[WARNING] LLM Judge hit 429 rate limit. Retrying in 5 seconds...")
-                                await asyncio.sleep(5.0)
+                            if attempt < 3:
+                                delay = (2 ** attempt) + random.uniform(0.5, 2.0)
+                                print(f"\n[WARNING] LLM Judge hit 429 rate limit. Retrying in {delay:.2f} seconds (attempt {attempt + 1}/3)...")
+                                await asyncio.sleep(delay)
                                 continue
                         
                         response.raise_for_status()
@@ -77,11 +79,11 @@ class GeminiJudge:
                         result = json.loads(cleaned_response)
                         break  # Succeeded, exit loop
                 except Exception as e:
-                    if attempt == 1:
+                    if attempt == 3:
                         # Fail on final retry attempt
                         result = {
                             "passed": False,
-                            "explanation": f"LLM API call failed after retry: {str(e)}. Fallback to fail."
+                            "explanation": f"LLM API call failed after 3 retries: {str(e)}. Fallback to fail."
                         }
                     else:
                         # For non-429 exceptions, fail immediately
