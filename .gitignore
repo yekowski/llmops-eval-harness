@@ -3,8 +3,8 @@
 .env.*
 
 # Cache files
-cache/
-cache/prompt_hash/
+/cache/
+/cache/prompt_hash/
 
 # Raw evaluation output traces (contains test data traces)
 outputs/raw/
