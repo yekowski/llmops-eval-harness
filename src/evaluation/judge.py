@@ -1,22 +1,23 @@
 import os
 import json
-import httpx
-import asyncio
 from typing import Optional
 from src.evaluation.prompts.judge_templates import JUDGE_PROMPT_TEMPLATE
 from src.cache.prompt_hash import PromptHashCache
+from src.providers.base import LLMProvider
+from src.providers.gemini import GeminiProvider
+from src.providers.deepseek import DeepSeekProvider
 
 class GeminiJudge:
     def __init__(
         self,
+        provider: Optional[LLMProvider] = None,
         api_key: Optional[str] = None,
         model: str = "gemini-3.5-flash",
         cache: Optional[PromptHashCache] = None
     ):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        self.model = model
         self.cache = cache
         self.total_cost = 0.0
+        self.provider = provider or GeminiProvider(api_key=api_key, model=model)
 
     async def evaluate(self, context: str, expected_answer: str, generated_answer: str) -> dict:
         """Evaluates a generated response against context and expected answer."""
@@ -35,42 +36,38 @@ class GeminiJudge:
             answer=generated_answer
         )
 
-        # Fallback to local rule-based grading if API key is not present
-        if not self.api_key:
+        # Fallback to local rule-based grading if API key is not present in the provider
+        if hasattr(self.provider, "api_key") and not self.provider.api_key:
             result = self._local_deterministic_grade(context, expected_answer, generated_answer)
         else:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "responseMimeType": "application/json"
-                }
-            }
-
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=payload, timeout=30.0)
-                response.raise_for_status()
-                data = response.json()
-                text_response = data["candidates"][0]["content"]["parts"][0]["text"]
+            text_response = await self.provider.generate(prompt)
+            
+            # Strip Markdown JSON fences if present
+            cleaned_response = text_response.strip()
+            if cleaned_response.startswith("```"):
+                lines = cleaned_response.splitlines()
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].startswith("```"):
+                    lines = lines[:-1]
+                cleaned_response = "\n".join(lines).strip()
                 
-                # Strip Markdown JSON fences if present
-                cleaned_response = text_response.strip()
-                if cleaned_response.startswith("```"):
-                    lines = cleaned_response.splitlines()
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].startswith("```"):
-                        lines = lines[:-1]
-                    cleaned_response = "\n".join(lines).strip()
-                    
-                result = json.loads(cleaned_response)
+            result = json.loads(cleaned_response)
 
         # Calculate cost for the call (input prompt and output text)
         input_tokens = max(1, len(prompt) // 4)
         output_tokens = max(1, len(json.dumps(result)) // 4)
         
-        # gemini-3.5-flash pricing: $0.075 / 1M input tokens, $0.30 / 1M output tokens
-        call_cost = (input_tokens / 1000.0) * 0.000075 + (output_tokens / 1000.0) * 0.000300
+        # Determine pricing based on the provider and model
+        pricing_input = 0.000075 / 1000.0
+        pricing_output = 0.000300 / 1000.0
+        
+        if hasattr(self.provider, "model") and "deepseek" in str(self.provider.model).lower():
+            # DeepSeek Chat pricing: $0.14 / 1M input tokens, $0.28 / 1M output tokens
+            pricing_input = 0.000140 / 1000.0
+            pricing_output = 0.000280 / 1000.0
+            
+        call_cost = input_tokens * pricing_input + output_tokens * pricing_output
         self.total_cost += call_cost
 
         # Cache results if caching is enabled

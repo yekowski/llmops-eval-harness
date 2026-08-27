@@ -21,3 +21,7 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 ## Meta-Evaluation & Quality Rules
 1. **Judge Drift Protection:** The judge evaluator must support a meta-evaluation mode to compare its outputs against human ground truth in `datasets/benchmarks/human_labeled.json`.
 2. **Caching:** All judge calls must pass through a prompt-hashing cache (`cache/prompt_hash/`) to prevent duplicate API hits during re-runs.
+
+## Multi-Provider Model Adapters
+1. **Architecture**: Strict separation of concerns. External model calls must route through abstract Provider adapters. Never hardcode `httpx` in business logic.
+2. **Rule**: Always implement graceful degradation and exponential backoff for remote APIs.
