@@ -60,7 +60,6 @@ async def main_async():
     ]
 
     # 3. Instantiate SUT, Cache, and Judge
-    sut = MockRAGClient()
     cache = PromptHashCache()
     
     # Initialize LLM Provider fallback chain if configured
@@ -88,6 +87,18 @@ async def main_async():
             else:
                 raise ValueError(f"Unknown provider name '{name}' in config fallback_chain.")
         provider = ProviderRouter(chain_instances)
+
+    # Initialize SUT wrapping the fallback provider router if configured
+    if provider:
+        from src.clients.base import SystemUnderTest
+        class LLMProviderSUT(SystemUnderTest):
+            def __init__(self, prov):
+                self.prov = prov
+            async def execute(self, query: str) -> str:
+                return await self.prov.generate(query)
+        sut = LLMProviderSUT(provider)
+    else:
+        sut = MockRAGClient()
 
     judge = GeminiJudge(provider=provider, cache=cache)
 
