@@ -1,6 +1,7 @@
 import os
 import json
 import httpx
+import asyncio
 from typing import Optional
 from src.evaluation.prompts.judge_templates import JUDGE_PROMPT_TEMPLATE
 from src.cache.prompt_hash import PromptHashCache
@@ -46,20 +47,49 @@ class GeminiJudge:
                 }
             }
 
-            try:
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(url, json=payload, timeout=30.0)
-                    response.raise_for_status()
-                    data = response.json()
-                    
-                    text_response = data["candidates"][0]["content"]["parts"][0]["text"]
-                    result = json.loads(text_response.strip())
-            except Exception as e:
-                # If LLM call fails, fallback to local grading or log error
-                result = {
-                    "passed": False,
-                    "explanation": f"LLM API call failed: {str(e)}. Fallback to fail."
-                }
+            result = None
+            for attempt in range(2):
+                try:
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(url, json=payload, timeout=30.0)
+                        
+                        # Handle 429 Rate Limit specifically
+                        if response.status_code == 429:
+                            if attempt == 0:
+                                print("\n[WARNING] LLM Judge hit 429 rate limit. Retrying in 5 seconds...")
+                                await asyncio.sleep(5.0)
+                                continue
+                        
+                        response.raise_for_status()
+                        data = response.json()
+                        text_response = data["candidates"][0]["content"]["parts"][0]["text"]
+                        
+                        # Strip Markdown JSON fences if present
+                        cleaned_response = text_response.strip()
+                        if cleaned_response.startswith("```"):
+                            lines = cleaned_response.splitlines()
+                            if lines[0].startswith("```"):
+                                lines = lines[1:]
+                            if lines and lines[-1].startswith("```"):
+                                lines = lines[:-1]
+                            cleaned_response = "\n".join(lines).strip()
+                            
+                        result = json.loads(cleaned_response)
+                        break  # Succeeded, exit loop
+                except Exception as e:
+                    if attempt == 1:
+                        # Fail on final retry attempt
+                        result = {
+                            "passed": False,
+                            "explanation": f"LLM API call failed after retry: {str(e)}. Fallback to fail."
+                        }
+                    else:
+                        # For non-429 exceptions, fail immediately
+                        result = {
+                            "passed": False,
+                            "explanation": f"LLM API call failed: {str(e)}. Fallback to fail."
+                        }
+                        break
 
         # Calculate cost for the call (input prompt and output text)
         input_tokens = max(1, len(prompt) // 4)
@@ -69,8 +99,8 @@ class GeminiJudge:
         call_cost = (input_tokens / 1000.0) * 0.000075 + (output_tokens / 1000.0) * 0.000300
         self.total_cost += call_cost
 
-        # Cache results if caching is enabled
-        if self.cache:
+        # Cache results if caching is enabled and the call didn't fail
+        if self.cache and not result.get("explanation", "").startswith("LLM API call failed"):
             self.cache.set(expected_answer, context, generated_answer, result)
 
         return result
