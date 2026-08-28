@@ -2,7 +2,7 @@ import os
 import json
 from typing import Optional
 from src.evaluation.prompts.judge_templates import JUDGE_PROMPT_TEMPLATE
-from src.cache.prompt_hash import PromptHashCache
+from src.utils.cache import EvalCache
 from src.providers.base import LLMProvider
 from src.providers.gemini import GeminiProvider
 from src.providers.deepseek import DeepSeekProvider
@@ -13,18 +13,46 @@ class GeminiJudge:
         provider: Optional[LLMProvider] = None,
         api_key: Optional[str] = None,
         model: str = "gemini-3.5-flash",
-        cache: Optional[PromptHashCache] = None
+        cache: Optional[EvalCache] = None
     ):
         self.cache = cache
         self.total_cost = 0.0
         self.provider = provider or GeminiProvider(api_key=api_key, model=model)
 
-    async def evaluate(self, context: str, expected_answer: str, generated_answer: str) -> dict:
+    def get_cached_evaluation(self, query: str, context: str, generated_answer: str) -> Optional[dict]:
+        """Check cache for evaluation result."""
+        if not self.cache:
+            return None
+        q = query if query is not None else ""
+        model_name = self.provider.model if hasattr(self.provider, "model") else "gemini-3.5-flash"
+        if hasattr(self.cache, "_compute_hash"):
+            return self.cache.get(
+                generated_answer=generated_answer,
+                query=q,
+                context=context,
+                model=model_name,
+                prompt_template=JUDGE_PROMPT_TEMPLATE
+            )
+        else:
+            return self.cache.get("", context, generated_answer)
+
+    async def evaluate(self, context: str, expected_answer: str, generated_answer: str, query: Optional[str] = None) -> dict:
         """Evaluates a generated response against context and expected answer."""
+        q = query if query is not None else expected_answer
+        model_name = self.provider.model if hasattr(self.provider, "model") else "gemini-3.5-flash"
         
         # Check cache first if caching is enabled
         if self.cache:
-            cached = self.cache.get(expected_answer, context, generated_answer)
+            if hasattr(self.cache, "_compute_hash"):
+                cached = self.cache.get(
+                    generated_answer=generated_answer,
+                    query=q,
+                    context=context,
+                    model=model_name,
+                    prompt_template=JUDGE_PROMPT_TEMPLATE
+                )
+            else:
+                cached = self.cache.get(expected_answer, context, generated_answer)
             if cached is not None:
                 # Cache hits are free ($0.00 cost)
                 return cached
@@ -91,7 +119,17 @@ class GeminiJudge:
 
         # Cache results if caching is enabled
         if self.cache:
-            self.cache.set(expected_answer, context, generated_answer, result)
+            if hasattr(self.cache, "_compute_hash"):
+                self.cache.set(
+                    generated_answer=generated_answer,
+                    query=q,
+                    context=context,
+                    model=model_name,
+                    prompt_template=JUDGE_PROMPT_TEMPLATE,
+                    result=result
+                )
+            else:
+                self.cache.set(expected_answer, context, generated_answer, result)
 
         return result
 

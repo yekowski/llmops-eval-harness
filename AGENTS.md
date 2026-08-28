@@ -31,3 +31,6 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 
 ## Data Management
 - Rule 5 (Data Management): Never hardcode evaluation datasets or test cases in Python logic. All evaluation runners must dynamically load their datasets from the file path specified in the YAML configuration (e.g., dataset_path).
+
+## Evaluation Caching
+- Rule 6 (Evaluation Caching): Never repeat identical LLM evaluation calls. Implement deterministic SHA-256 hashing of all inputs (SUT answer, context, question, judge model, judge prompt template) to cache and retrieve past evaluations.

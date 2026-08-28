@@ -6,7 +6,7 @@ import argparse
 import asyncio
 from src.schemas.models import DatasetEntry
 from src.clients.mock_client import MockRAGClient
-from src.cache.prompt_hash import PromptHashCache
+from src.utils.cache import EvalCache
 from src.evaluation.judge import GeminiJudge
 from src.runners.async_runner import run_evaluation
 from src.reporters.markdown import generate_markdown_report
@@ -58,7 +58,7 @@ async def main_async():
     ]
 
     # 3. Instantiate SUT, Cache, and Judge
-    cache = PromptHashCache()
+    cache = EvalCache()
     
     # Initialize LLM Provider fallback chain if configured
     provider = None

@@ -36,7 +36,8 @@ async def run_meta_evaluation(dataset: List[Dict], judge: GeminiJudge) -> Dict:
         tasks.append(judge.evaluate(
             context=item["context"],
             expected_answer=item["expected_answer"],
-            generated_answer=item["generated_answer"]
+            generated_answer=item["generated_answer"],
+            query=item.get("query")
         ))
         
     results = await asyncio.gather(*tasks)

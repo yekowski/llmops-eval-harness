@@ -20,25 +20,34 @@ async def run_evaluation(
 
     async def evaluate_single(entry: DatasetEntry) -> EvaluationResult:
         nonlocal last_request_time
+        from src.providers.base import generation_latency
         async with sem:
+            generation_latency.set(0.0)
             start_time = time.perf_counter()
             try:
                 response = await sut.execute(entry.query)
-                latency = time.perf_counter() - start_time
+                sut_latency = generation_latency.get()
+                if sut_latency == 0.0:
+                    sut_latency = time.perf_counter() - start_time
                 # Simulate basic token estimation for the response
                 tokens = len(response.split())
                 
+                judge_latency = 0.0
                 if judge:
                     # Check cache first to avoid rate limiting cache hits
                     is_cached = False
                     judge_res = None
                     if judge.cache:
-                        cached = judge.cache.get(entry.expected_answer, entry.expected_context, response)
+                        if hasattr(judge, "get_cached_evaluation"):
+                            cached = judge.get_cached_evaluation(entry.query, entry.expected_context, response)
+                        else:
+                            cached = judge.cache.get(entry.expected_answer, entry.expected_context, response)
                         if cached is not None:
                             is_cached = True
                             judge_res = cached
                     
                     if not is_cached:
+                        generation_latency.set(0.0)
                         last_exception = None
                         for attempt in range(3):
                             async with rate_limit_lock:
@@ -50,12 +59,18 @@ async def run_evaluation(
                                 last_request_time = time.perf_counter()
                             
                             try:
+                                judge_start = time.perf_counter()
                                 # Grade the SUT response using the Gemini LLM Judge
                                 judge_res = await judge.evaluate(
                                     context=entry.expected_context,
                                     expected_answer=entry.expected_answer,
-                                    generated_answer=response
+                                    generated_answer=response,
+                                    query=entry.query
                                 )
+                                jl = generation_latency.get()
+                                if jl == 0.0:
+                                    jl = time.perf_counter() - judge_start
+                                judge_latency = jl
                                 break  # Succeeded, exit loop
                             except Exception as e:
                                 last_exception = e
@@ -88,15 +103,18 @@ async def run_evaluation(
                     
                 return EvaluationResult(
                     passed=passed,
-                    latency=latency,
+                    latency=sut_latency,
                     tokens=tokens,
                     faithfulness=faithfulness,
                     answer_relevance=relevance,
-                    correctness=correctness
+                    correctness=correctness,
+                    judge_latency=judge_latency
                 )
             except Exception:
-                latency = time.perf_counter() - start_time
-                return EvaluationResult(passed=False, latency=latency, tokens=0)
+                sut_latency = generation_latency.get()
+                if sut_latency == 0.0:
+                    sut_latency = time.perf_counter() - start_time
+                return EvaluationResult(passed=False, latency=sut_latency, tokens=0)
 
     # Concurrently execute all evaluation tasks
     results = await asyncio.gather(*(evaluate_single(entry) for entry in entries))
