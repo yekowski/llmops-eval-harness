@@ -26,7 +26,20 @@ async def main_async():
         default="datasets/benchmarks/human_labeled.json",
         help="Path to the evaluation dataset JSON file"
     )
+    parser.add_argument(
+        "--history",
+        type=int,
+        nargs="?",
+        const=5,
+        default=None,
+        help="Print a formatted table of the last N runs from the history log (default: 5 if flag present)"
+    )
     args = parser.parse_args()
+
+    if args.history is not None:
+        from src.utils.tracker import print_history_table
+        print_history_table("runs/history.jsonl", args.history)
+        sys.exit(0)
 
     # 1. Load SLA configuration
     if not os.path.exists(args.config):
@@ -194,6 +207,49 @@ async def main_async():
 
     # 7. Write to GITHUB_STEP_SUMMARY for CI/CD integrations
     write_to_step_summary(markdown_report)
+
+    # 7. Log the run history
+    from src.utils.tracker import ExperimentTracker
+    tracker = ExperimentTracker()
+    
+    # Resolve provider names
+    if provider:
+        if hasattr(provider, "active_provider"):
+            sut_provider = provider.active_provider.__class__.__name__
+        else:
+            sut_provider = provider.__class__.__name__
+    else:
+        sut_provider = "MockRAGClient"
+        
+    if hasattr(judge, "provider") and judge.provider:
+        if hasattr(judge.provider, "active_provider"):
+            judge_provider = judge.provider.active_provider.__class__.__name__
+        else:
+            judge_provider = judge.provider.__class__.__name__
+    else:
+        judge_provider = judge.__class__.__name__
+
+    aggregate_metrics = {
+        "faithfulness": avg_faithfulness,
+        "relevance": avg_relevance,
+        "correctness": avg_correctness,
+        "pass_rate": pass_rate_pct,
+        "latency": avg_latency_ms,
+        "cost": total_cost_usd
+    }
+
+    try:
+        run_id = tracker.log_run(
+            config_path=args.config,
+            dataset_path=dataset_path,
+            sut_provider=sut_provider,
+            judge_provider=judge_provider,
+            aggregate_metrics=aggregate_metrics,
+            sla_passed=sla_passed
+        )
+        print(f"Logged run record {run_id} to runs/history.jsonl")
+    except Exception as e:
+        print(f"[WARNING] Failed to log run to tracker: {e}")
 
     # 8. Exit with non-zero code on SLA failure to fail the PR build
     if not sla_passed:

@@ -34,3 +34,6 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 
 ## Evaluation Caching
 - Rule 6 (Evaluation Caching): Never repeat identical LLM evaluation calls. Implement deterministic SHA-256 hashing of all inputs (SUT answer, context, question, judge model, judge prompt template) to cache and retrieve past evaluations.
+
+## Experiment Tracking
+- Rule 7 (Experiment Tracking): Every completed evaluation run must log an immutable run record containing git metadata, model config, dataset path, aggregate metrics, cost, and SLA status to a structured history log (runs/history.jsonl).
