@@ -15,7 +15,13 @@ class ProviderRouter(LLMProvider):
             provider_name = provider.__class__.__name__
             try:
                 # Attempt to generate using the current provider
-                return await provider.generate(prompt, **kwargs)
+                import time
+                from src.providers.base import generation_latency
+                start_time = time.perf_counter()
+                res = await provider.generate(prompt, **kwargs)
+                latency = time.perf_counter() - start_time
+                generation_latency.set(latency)
+                return res
             except (ProviderRateLimitError, ProviderAPIError) as e:
                 # Format specific failover log messaging
                 if i < len(self.providers) - 1:

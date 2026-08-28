@@ -12,3 +12,4 @@ class EvaluationResult(BaseModel):
     faithfulness: float = 0.0
     answer_relevance: float = 0.0
     correctness: float = 0.0
+    judge_latency: float = 0.0
