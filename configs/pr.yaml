@@ -11,6 +11,11 @@ sla_thresholds:
   max_score_drop: 0.03
 
 fallback_chain:
-  - "gemini"
   - "groq"
+  - "gemini"
   - "mock"
+
+providers:
+  groq:
+    model: "llama-3.3-70b-versatile"
+    temperature: 0.0

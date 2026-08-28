@@ -37,3 +37,6 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 
 ## Experiment Tracking
 - Rule 7 (Experiment Tracking): Every completed evaluation run must log an immutable run record containing git metadata, model config, dataset path, aggregate metrics, cost, and SLA status to a structured history log (runs/history.jsonl).
+
+## Provider Circuit Breaker
+- Rule 8 (Provider Circuit Breaker): The `ProviderRouter` must maintain in-memory health state. When a provider returns a `429 (Rate Limit)` or `5xx (Server Error)`, it must trip a circuit breaker (default: 60-second cooldown) to fast-bypass that provider on subsequent requests without wasting network roundtrips.

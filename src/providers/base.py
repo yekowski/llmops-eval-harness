@@ -4,13 +4,19 @@ from abc import ABC, abstractmethod
 # Thread-safe & coroutine-safe context variable to store precise successful provider execution time (in seconds)
 generation_latency = contextvars.ContextVar("generation_latency", default=0.0)
 
+from typing import Optional
+
 class ProviderRateLimitError(Exception):
     """Exception raised when a provider is rate limited (HTTP 429)."""
-    pass
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 class ProviderAPIError(Exception):
     """Exception raised for other API/HTTP errors from the provider."""
-    pass
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 class LLMProvider(ABC):
     @abstractmethod

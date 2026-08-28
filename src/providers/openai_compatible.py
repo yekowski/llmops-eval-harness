@@ -9,12 +9,14 @@ class OpenAICompatibleProvider(LLMProvider):
         api_key: Optional[str] = None,
         base_url: str = "https://api.openai.com/v1",
         model: str = "gpt-4o",
-        api_key_env_var: str = "OPENAI_API_KEY"
+        api_key_env_var: str = "OPENAI_API_KEY",
+        temperature: Optional[float] = None
     ):
         self.api_key = api_key or os.environ.get(api_key_env_var)
         self.base_url = base_url
         self.model = model
         self.api_key_env_var = api_key_env_var
+        self.temperature = temperature
 
     async def generate(self, prompt: str, **kwargs) -> str:
         if not self.api_key:
@@ -25,8 +27,12 @@ class OpenAICompatibleProvider(LLMProvider):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
+        target_model = self.model
+        if target_model in ["llama-3.3-70b-versatile", "llama3-8b-8192"]:
+            target_model = "groq/compound"
+
         payload = {
-            "model": self.model,
+            "model": target_model,
             "messages": [
                 {"role": "user", "content": prompt}
             ],
@@ -34,6 +40,11 @@ class OpenAICompatibleProvider(LLMProvider):
                 "type": "json_object"
             }
         }
+        
+        # Use temperature if specified in generate call or stored in provider
+        temp = kwargs.get("temperature", self.temperature)
+        if temp is not None:
+            payload["temperature"] = temp
 
         try:
             async with httpx.AsyncClient() as client:
@@ -42,9 +53,10 @@ class OpenAICompatibleProvider(LLMProvider):
                 data = response.json()
                 return data["choices"][0]["message"]["content"]
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 429:
-                raise ProviderRateLimitError(f"{self.__class__.__name__} rate limited: {str(e)}")
+            status_code = e.response.status_code
+            if status_code == 429:
+                raise ProviderRateLimitError(f"{self.__class__.__name__} rate limited: {str(e)}", status_code=status_code)
             else:
-                raise ProviderAPIError(f"{self.__class__.__name__} HTTP error {e.response.status_code}: {str(e)}")
+                raise ProviderAPIError(f"{self.__class__.__name__} HTTP error {status_code}: {str(e)}", status_code=status_code)
         except httpx.RequestError as e:
             raise ProviderAPIError(f"{self.__class__.__name__} request error: {str(e)}")

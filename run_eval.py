@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import sys
 import json
@@ -79,20 +82,34 @@ async def main_async():
     if fallback_chain:
         from src.providers import GeminiProvider, OpenAIProvider, DeepSeekProvider, GroqProvider, QwenProvider, AnthropicProvider, MockProvider, ProviderRouter
         chain_instances = []
+        providers_config = config.get("providers", {})
         for name in fallback_chain:
             name_lower = name.lower()
+            prov_opts = providers_config.get(name_lower, {})
+            model_name = prov_opts.get("model")
+            temperature = prov_opts.get("temperature")
+            
+            kwargs = {}
+            if model_name is not None:
+                kwargs["model"] = model_name
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+                
             if name_lower == "gemini":
-                chain_instances.append(GeminiProvider())
+                gemini_kwargs = {}
+                if model_name is not None:
+                    gemini_kwargs["model"] = model_name
+                chain_instances.append(GeminiProvider(**gemini_kwargs))
             elif name_lower == "openai":
-                chain_instances.append(OpenAIProvider())
+                chain_instances.append(OpenAIProvider(**kwargs))
             elif name_lower == "deepseek":
-                chain_instances.append(DeepSeekProvider())
+                chain_instances.append(DeepSeekProvider(**kwargs))
             elif name_lower == "groq":
-                chain_instances.append(GroqProvider())
+                chain_instances.append(GroqProvider(**kwargs))
             elif name_lower == "qwen":
-                chain_instances.append(QwenProvider())
+                chain_instances.append(QwenProvider(**kwargs))
             elif name_lower == "anthropic":
-                chain_instances.append(AnthropicProvider())
+                chain_instances.append(AnthropicProvider(**kwargs))
             elif name_lower == "mock":
                 chain_instances.append(MockProvider())
             else:
