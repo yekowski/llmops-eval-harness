@@ -5,6 +5,7 @@
 # Cache files
 /cache/
 /cache/prompt_hash/
+.eval_cache/
 
 # Raw evaluation output traces (contains test data traces)
 outputs/raw/

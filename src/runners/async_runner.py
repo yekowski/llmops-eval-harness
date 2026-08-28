@@ -33,7 +33,10 @@ async def run_evaluation(
                     is_cached = False
                     judge_res = None
                     if judge.cache:
-                        cached = judge.cache.get(entry.expected_answer, entry.expected_context, response)
+                        if hasattr(judge, "get_cached_evaluation"):
+                            cached = judge.get_cached_evaluation(entry.query, entry.expected_context, response)
+                        else:
+                            cached = judge.cache.get(entry.expected_answer, entry.expected_context, response)
                         if cached is not None:
                             is_cached = True
                             judge_res = cached
@@ -54,7 +57,8 @@ async def run_evaluation(
                                 judge_res = await judge.evaluate(
                                     context=entry.expected_context,
                                     expected_answer=entry.expected_answer,
-                                    generated_answer=response
+                                    generated_answer=response,
+                                    query=entry.query
                                 )
                                 break  # Succeeded, exit loop
                             except Exception as e:
