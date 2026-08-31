@@ -40,14 +40,15 @@ class AnthropicProvider(LLMProvider):
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=payload, headers=headers, timeout=30.0)
+                response = await client.post(url, json=payload, headers=headers, timeout=5.0)
                 response.raise_for_status()
                 data = response.json()
                 return data["content"][0]["text"]
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 429:
-                raise ProviderRateLimitError(f"Anthropic API rate limited: {str(e)}")
+            status_code = e.response.status_code
+            if status_code == 429:
+                raise ProviderRateLimitError(f"Anthropic API rate limited: {str(e)}", status_code=status_code)
             else:
-                raise ProviderAPIError(f"Anthropic API HTTP error {e.response.status_code}: {str(e)}")
+                raise ProviderAPIError(f"Anthropic API HTTP error {status_code}: {str(e)}", status_code=status_code)
         except httpx.RequestError as e:
             raise ProviderAPIError(f"Anthropic API request error: {str(e)}")
