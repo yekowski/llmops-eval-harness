@@ -151,3 +151,24 @@ fac2fa5c  2026-08-28 05:28:26 640a4fe  MockProvider   MockProvider   100.0%    0
 - **SUT / Judge:** Active provider names used for execution and evaluation.
 - **Pass Rate / Latency / Cost:** Aggregated performance and expenditure metrics.
 - **SLA Status:** Final gatekeeper verdict (`PASSED` or `FAILED`).
+
+---
+
+## 5. Dashboards & Visualization
+
+The evaluation harness provides a read-only Streamlit dashboard for visualizing historical CI/CD evaluation telemetry, quality metric trends over time, and raw run ledgers.
+
+### Launching the Dashboard
+
+Execute the following command in your terminal:
+
+```bash
+streamlit run src/reporters/dashboard.py
+```
+
+### Key Features
+- **KPI Overview Cards:** Displays the latest run's Pass Rate (with SLA status badge), Average Latency (ms), and Total Evaluation Expenditure ($).
+- **Quality Score Trends:** Plotly interactive line charts tracking Faithfulness, Answer Relevance, Correctness, Context Precision, and Context Recall over run history.
+- **Latency & Cost Profiling:** Visualizes performance and API cost progression across Git commits.
+- **Run Ledger Table:** Interactive dataframe displaying historical run records (`runs/history.jsonl`) with search and filter capabilities.
+- **Read-Only Invariant:** Strict separation of concerns — the dashboard parses existing JSONL logs and never modifies state or triggers LLM calls.

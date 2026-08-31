@@ -49,3 +49,6 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 
 ## RAG Retrieval Metrics Separability
 - Rule 11 (RAG Retrieval Metrics Separability): Retrieval evaluation metrics (Context Precision, Context Recall) must be structurally decoupled from generation metrics (Faithfulness, Relevance, Correctness) in both the dataset schema and the LLM Judge runner. Evaluation entries must gracefully accept optional `retrieved_contexts` (`List[str]`) and `ground_truth` (`str`) fields without breaking legacy prompt-response test cases.
+
+## Visualization Decoupling & Read-Only State
+- Rule 12 (Visualization Decoupling & Read-Only State): The dashboard must act as a strictly read-only presentation layer. It may parse `runs/history.jsonl` but must never mutate evaluation state, cache, or trigger evaluation runs.
