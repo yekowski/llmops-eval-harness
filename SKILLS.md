@@ -80,12 +80,49 @@ To support decoupled retrieval metrics (Context Precision, Context Recall) along
 ```
 
 ### Metrics Separability
-- **Retrieval Metrics (Context Precision, Context Recall):** Evaluates how accurately `retrieved_contexts` match `expected_context` independently of LLM generation.
+- **Retrieval Metrics (Context Precision, Context Recall):** Evaluates how accurately `retrieved_contexts` match `expected_context` / `ground_truth` independently of LLM generation.
 - **Generation Metrics (Faithfulness, Relevance, Correctness):** Evaluates the SUT generated answer against `retrieved_contexts` and `expected_answer`.
 
 ---
 
-## 3. Querying Tracking History via CLI
+## 3. Executing RAG Retrieval Evaluations
+
+In Tranche 2 RAG evaluation workflows, retrieval performance is measured independently of LLM response generation to isolate retrieval pipeline quality (e.g. vector search, hybrid ranking, chunking strategy).
+
+### Retrieval Metric Definitions
+
+1. **Context Precision (Signal-to-Noise Ratio):**
+   - Evaluates whether the chunks present in `retrieved_contexts` are relevant and whether relevant chunks are ranked higher than irrelevant ones.
+   - Evaluated by asking the LLM Judge to calculate:
+     $$\text{Context Precision} = \frac{\sum_{k=1}^{N} P@k \cdot v_k}{\text{Total Relevant Chunks}}$$
+     where $v_k \in \{0, 1\}$ indicates relevance of chunk $k$, and $P@k$ is precision at rank $k$.
+
+2. **Context Recall (Information Completeness):**
+   - Evaluates whether all key ground-truth facts in `ground_truth` / `expected_context` were successfully captured across the set of `retrieved_contexts`.
+   - Evaluated by analyzing each ground-truth statement and verifying if it is explicitly supported by at least one chunk in `retrieved_contexts`:
+     $$\text{Context Recall} = \frac{\text{Number of Ground-Truth Statements Attributable to Retrieved Chunks}}{\text{Total Number of Ground-Truth Statements}}$$
+
+### Modern RAG Test Case Schema
+
+Evaluation entries gracefully support optional `retrieved_contexts` (`List[str]`) and `ground_truth` (`str`) fields. Legacy prompt-response entries without these fields continue to evaluate generation metrics seamlessly.
+
+```json
+{
+  "id": "rag-eval-042",
+  "query": "How does the ProviderRouter handle rate limit (429) errors?",
+  "ground_truth": "The ProviderRouter trips a circuit breaker with a 60-second cooldown on 429 rate limit errors to fast-bypass the provider.",
+  "expected_answer": "It trips a circuit breaker for 60 seconds to bypass the failing provider without making network roundtrips.",
+  "retrieved_contexts": [
+    "When a provider returns a 429 (Rate Limit) or 5xx (Server Error), the ProviderRouter trips a circuit breaker with a 60-second cooldown.",
+    "Fast-bypass skips network roundtrips for providers currently in a cooldown state.",
+    "Unrelated log message: Server started on port 8080."
+  ]
+}
+```
+
+---
+
+## 4. Querying Tracking History via CLI
 
 Every completed evaluation run logs an immutable run record to `runs/history.jsonl`. You can query and display recent evaluation history directly from the CLI.
 

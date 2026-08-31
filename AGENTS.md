@@ -48,4 +48,4 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 - Rule 10 (Token Telemetry & Cost Accounting): All provider adapters must parse and expose standard token usage metadata (`prompt_tokens`, `completion_tokens`) to ensure accurate, uniform cost accounting across evaluations.
 
 ## RAG Retrieval Metrics Separability
-- Rule 11 (RAG Retrieval Metrics Separability): Retrieval evaluation metrics (Context Precision, Context Recall) must be structurally decoupled from generation metrics (Faithfulness, Relevance, Correctness) in both the dataset schema and the LLM Judge runner.
+- Rule 11 (RAG Retrieval Metrics Separability): Retrieval evaluation metrics (Context Precision, Context Recall) must be structurally decoupled from generation metrics (Faithfulness, Relevance, Correctness) in both the dataset schema and the LLM Judge runner. Evaluation entries must gracefully accept optional `retrieved_contexts` (`List[str]`) and `ground_truth` (`str`) fields without breaking legacy prompt-response test cases.
