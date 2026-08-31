@@ -7,6 +7,8 @@ from src.providers.groq import GroqProvider
 from src.providers.qwen import QwenProvider
 from src.providers.anthropic import AnthropicProvider
 from src.providers.mock import MockProvider
+from src.providers.ollama import OllamaProvider
+from src.providers.vllm import VLLMProvider
 from src.providers.router import ProviderRouter
 
 __all__ = [
@@ -21,5 +23,7 @@ __all__ = [
     "QwenProvider",
     "AnthropicProvider",
     "MockProvider",
+    "OllamaProvider",
+    "VLLMProvider",
     "ProviderRouter"
 ]

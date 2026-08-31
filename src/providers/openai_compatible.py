@@ -12,8 +12,10 @@ class OpenAICompatibleProvider(LLMProvider):
         api_key_env_var: str = "OPENAI_API_KEY",
         temperature: Optional[float] = None
     ):
-        self.api_key = api_key or os.environ.get(api_key_env_var)
         self.base_url = base_url
+        self.api_key = api_key or os.environ.get(api_key_env_var)
+        if not self.api_key and any(loc in base_url for loc in ["localhost", "127.0.0.1", "11434", "8000", "0.0.0.0"]):
+            self.api_key = "local"
         self.model = model
         self.api_key_env_var = api_key_env_var
         self.temperature = temperature
@@ -28,7 +30,7 @@ class OpenAICompatibleProvider(LLMProvider):
             "Authorization": f"Bearer {self.api_key}"
         }
         target_model = self.model
-        if target_model in ["llama-3.3-70b-versatile", "llama3-8b-8192"]:
+        if "api.groq.com" in self.base_url and target_model in ["llama-3.3-70b-versatile", "llama3-8b-8192"]:
             target_model = "groq/compound"
 
         payload = {

@@ -80,7 +80,7 @@ async def main_async():
     provider = None
     fallback_chain = config.get("fallback_chain")
     if fallback_chain:
-        from src.providers import GeminiProvider, OpenAIProvider, DeepSeekProvider, GroqProvider, QwenProvider, AnthropicProvider, MockProvider, ProviderRouter
+        from src.providers import GeminiProvider, OpenAIProvider, DeepSeekProvider, GroqProvider, QwenProvider, AnthropicProvider, MockProvider, OllamaProvider, VLLMProvider, ProviderRouter
         chain_instances = []
         providers_config = config.get("providers", {})
         for name in fallback_chain:
@@ -88,12 +88,15 @@ async def main_async():
             prov_opts = providers_config.get(name_lower, {})
             model_name = prov_opts.get("model")
             temperature = prov_opts.get("temperature")
+            base_url = prov_opts.get("base_url")
             
             kwargs = {}
             if model_name is not None:
                 kwargs["model"] = model_name
             if temperature is not None:
                 kwargs["temperature"] = temperature
+            if base_url is not None:
+                kwargs["base_url"] = base_url
                 
             if name_lower == "gemini":
                 gemini_kwargs = {}
@@ -110,6 +113,10 @@ async def main_async():
                 chain_instances.append(QwenProvider(**kwargs))
             elif name_lower == "anthropic":
                 chain_instances.append(AnthropicProvider(**kwargs))
+            elif name_lower == "ollama":
+                chain_instances.append(OllamaProvider(**kwargs))
+            elif name_lower == "vllm":
+                chain_instances.append(VLLMProvider(**kwargs))
             elif name_lower == "mock":
                 chain_instances.append(MockProvider())
             else:

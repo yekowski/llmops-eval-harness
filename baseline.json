@@ -1,7 +1,7 @@
 {
   "pass_rate_pct": 100.0,
-  "avg_latency_ms": 0.003425031900405884,
-  "total_cost_usd": 0.00024532499999999996,
+  "avg_latency_ms": 0.0010833144187927246,
+  "total_cost_usd": 0.0,
   "faithfulness": 0.9,
   "answer_relevance": 0.9,
   "correctness": 0.9
