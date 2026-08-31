@@ -17,6 +17,44 @@ class ProviderRouter(LLMProvider):
         # Concurrency safety lock for _cooldowns reads/writes
         self._lock = asyncio.Lock()
 
+    async def warmup(self) -> None:
+        """Sends a lightweight health check to each provider sequentially to pre-warm the circuit breaker before concurrent runs."""
+        for provider in self.providers:
+            provider_name = provider.__class__.__name__
+            if provider_name == "MockProvider":
+                continue
+            
+            async with self._lock:
+                cooldown_end = self._cooldowns.get(provider_name, 0.0)
+            if time.time() < cooldown_end:
+                continue
+
+            try:
+                await provider.generate("ping")
+            except (ProviderRateLimitError, ProviderAPIError) as e:
+                status_code = getattr(e, "status_code", None)
+                if status_code is None:
+                    msg = str(e).lower()
+                    if "401" in msg or "unauthorized" in msg or "api key is required" in msg:
+                        status_code = 401
+                    elif "403" in msg or "forbidden" in msg:
+                        status_code = 403
+                    elif "429" in msg or "rate limited" in msg or "rate_limit" in msg:
+                        status_code = 429
+                    elif "500" in msg or "502" in msg or "503" in msg or "504" in msg:
+                        status_code = 500
+
+                if status_code in [401, 403]:
+                    print(f"[CIRCUIT DISABLED] Provider '{provider_name}' authentication failed. Disabling for entire run.", file=sys.stderr)
+                    async with self._lock:
+                        self._cooldowns[provider_name] = float('inf')
+                else:
+                    print(f"[CIRCUIT TRIPPED] Provider '{provider_name}' rate limited/unavailable. Cooling down for 60s.", file=sys.stderr)
+                    async with self._lock:
+                        self._cooldowns[provider_name] = time.time() + 60.0
+            except Exception:
+                pass
+
     async def generate(self, prompt: str, **kwargs) -> str:
         for i, provider in enumerate(self.providers):
             provider_name = provider.__class__.__name__

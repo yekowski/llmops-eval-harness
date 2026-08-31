@@ -130,6 +130,9 @@ async def main_async():
 
     judge = GeminiJudge(provider=provider, cache=cache)
 
+    if provider and hasattr(provider, "warmup"):
+        await provider.warmup()
+
     print(f"Running evaluation of {len(entries)} entries concurrently against SUT...")
     results = await run_evaluation(entries, sut, judge)
 
