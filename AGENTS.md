@@ -40,3 +40,12 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 
 ## Provider Circuit Breaker
 - Rule 8 (Provider Circuit Breaker): The `ProviderRouter` must maintain in-memory health state. When a provider returns a `429 (Rate Limit)` or `5xx (Server Error)`, it must trip a circuit breaker (default: 60-second cooldown) to fast-bypass that provider on subsequent requests without wasting network roundtrips.
+
+## Local Model Fallback & Runtime Config
+- Rule 9 (Local Model Fallback & Runtime Config): Local runtimes (such as Ollama or vLLM endpoints via OpenAI-compatible schema) must be seamlessly supportable in the fallback chain without overriding production API credentials.
+
+## Token Telemetry & Cost Accounting
+- Rule 10 (Token Telemetry & Cost Accounting): All provider adapters must parse and expose standard token usage metadata (`prompt_tokens`, `completion_tokens`) to ensure accurate, uniform cost accounting across evaluations.
+
+## RAG Retrieval Metrics Separability
+- Rule 11 (RAG Retrieval Metrics Separability): Retrieval evaluation metrics (Context Precision, Context Recall) must be structurally decoupled from generation metrics (Faithfulness, Relevance, Correctness) in both the dataset schema and the LLM Judge runner.
