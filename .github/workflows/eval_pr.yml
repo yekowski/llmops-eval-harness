@@ -28,6 +28,7 @@ jobs:
       - name: Run Evaluation Harness
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PYTHONPATH: .
         run: |
           PYTHONPATH=. python run_eval.py --config configs/pr.yaml
