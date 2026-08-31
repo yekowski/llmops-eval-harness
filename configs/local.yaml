@@ -5,6 +5,8 @@ sla_thresholds:
   min_faithfulness: 0.85
   min_relevance: 0.80
   min_correctness: 0.85
+  min_context_precision: 0.75
+  min_context_recall: 0.75
   min_pass_rate: 0.90
   max_latency_ms: 3000
   max_cost_usd: 0.05

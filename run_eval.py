@@ -55,7 +55,12 @@ async def main_async():
     sla_thresholds = config.get("sla_thresholds", {})
 
     # 2. Load dataset
-    dataset_path = config.get("dataset_path", args.dataset)
+    default_dataset = "datasets/benchmarks/human_labeled.json"
+    if args.dataset != default_dataset or "dataset_path" not in config:
+        dataset_path = args.dataset
+    else:
+        dataset_path = config.get("dataset_path", args.dataset)
+
     if not os.path.exists(dataset_path):
         print(f"Error: Dataset not found at {dataset_path}")
         sys.exit(1)
@@ -64,14 +69,25 @@ async def main_async():
         dataset = json.load(f)
 
     # Convert dataset entries to Pydantic objects
-    entries = [
-        DatasetEntry(
-            query=item["query"],
-            expected_context=item.get("context") or item.get("expected_context", ""),
-            expected_answer=item.get("expected_answer", "")
+    entries = []
+    for item in dataset:
+        retrieved_contexts = item.get("retrieved_contexts")
+        ground_truth = item.get("ground_truth") or item.get("expected_answer", "")
+        expected_answer = item.get("expected_answer") or item.get("ground_truth", "")
+        ctx = item.get("context") or item.get("expected_context")
+        if not ctx and retrieved_contexts:
+            ctx = "\n---\n".join(retrieved_contexts)
+        elif not ctx:
+            ctx = ""
+        entries.append(
+            DatasetEntry(
+                query=item["query"],
+                expected_context=ctx,
+                expected_answer=expected_answer,
+                retrieved_contexts=retrieved_contexts,
+                ground_truth=ground_truth
+            )
         )
-        for item in dataset
-    ]
 
     # 3. Instantiate SUT, Cache, and Judge
     cache = EvalCache()
@@ -154,6 +170,11 @@ async def main_async():
     avg_relevance = sum(r.answer_relevance for r in results) / total_count if total_count > 0 else 0.0
     avg_correctness = sum(r.correctness for r in results) / total_count if total_count > 0 else 0.0
 
+    precisions = [r.context_precision for r in results if r.context_precision is not None]
+    recalls = [r.context_recall for r in results if r.context_recall is not None]
+    avg_context_precision = (sum(precisions) / len(precisions)) if precisions else None
+    avg_context_recall = (sum(recalls) / len(recalls)) if recalls else None
+
     # Load baseline
     baseline_path = "baseline.json"
     baseline = {}
@@ -171,12 +192,16 @@ async def main_async():
     delta_faithfulness = (avg_faithfulness - baseline["faithfulness"]) if "faithfulness" in baseline else None
     delta_relevance = (avg_relevance - baseline["answer_relevance"]) if "answer_relevance" in baseline else None
     delta_correctness = (avg_correctness - baseline["correctness"]) if "correctness" in baseline else None
+    delta_context_precision = (avg_context_precision - baseline["context_precision"]) if ("context_precision" in baseline and avg_context_precision is not None) else None
+    delta_context_recall = (avg_context_recall - baseline["context_recall"]) if ("context_recall" in baseline and avg_context_recall is not None) else None
 
     # 5. Check SLAs
     min_pass_rate = sla_thresholds.get("min_pass_rate", 0.0)
     min_faithfulness = sla_thresholds.get("min_faithfulness", 0.0)
     min_relevance = sla_thresholds.get("min_relevance", 0.0)
     min_correctness = sla_thresholds.get("min_correctness", 0.0)
+    min_context_precision = sla_thresholds.get("min_context_precision")
+    min_context_recall = sla_thresholds.get("min_context_recall")
     max_latency = sla_thresholds.get("max_latency_ms", float("inf"))
     max_cost = sla_thresholds.get("max_cost_usd", float("inf"))
     max_score_drop = sla_thresholds.get("max_score_drop", float("inf"))
@@ -192,6 +217,12 @@ async def main_async():
         failures.append(f"relevance {avg_relevance:.2f} < required {min_relevance:.2f}")
     if avg_correctness < min_correctness:
         failures.append(f"correctness {avg_correctness:.2f} < required {min_correctness:.2f}")
+    if min_context_precision is not None and avg_context_precision is not None:
+        if avg_context_precision < min_context_precision:
+            failures.append(f"context precision {avg_context_precision:.2f} < required {min_context_precision:.2f}")
+    if min_context_recall is not None and avg_context_recall is not None:
+        if avg_context_recall < min_context_recall:
+            failures.append(f"context recall {avg_context_recall:.2f} < required {min_context_recall:.2f}")
     if avg_latency_ms > max_latency:
         failures.append(f"latency {avg_latency_ms:.2f} ms > required {max_latency:.2f} ms")
     if total_cost_usd > max_cost:
@@ -220,12 +251,16 @@ async def main_async():
         "avg_faithfulness": avg_faithfulness,
         "avg_relevance": avg_relevance,
         "avg_correctness": avg_correctness,
+        "avg_context_precision": avg_context_precision,
+        "avg_context_recall": avg_context_recall,
         "delta_pass_rate_pct": delta_pass_rate,
         "delta_latency_ms": delta_latency,
         "delta_cost_usd": delta_cost,
         "delta_faithfulness": delta_faithfulness,
         "delta_relevance": delta_relevance,
-        "delta_correctness": delta_correctness
+        "delta_correctness": delta_correctness,
+        "delta_context_precision": delta_context_precision,
+        "delta_context_recall": delta_context_recall
     }
 
     # 6. Generate and output Markdown report
@@ -264,6 +299,10 @@ async def main_async():
         "latency": avg_latency_ms,
         "cost": total_cost_usd
     }
+    if avg_context_precision is not None:
+        aggregate_metrics["context_precision"] = avg_context_precision
+    if avg_context_recall is not None:
+        aggregate_metrics["context_recall"] = avg_context_recall
 
     try:
         run_id = tracker.log_run(
@@ -294,6 +333,10 @@ async def main_async():
             "answer_relevance": avg_relevance,
             "correctness": avg_correctness
         }
+        if avg_context_precision is not None:
+            new_baseline["context_precision"] = avg_context_precision
+        if avg_context_recall is not None:
+            new_baseline["context_recall"] = avg_context_recall
         try:
             with open(baseline_path, "w") as f:
                 json.dump(new_baseline, f, indent=2)

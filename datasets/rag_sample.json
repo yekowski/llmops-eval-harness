@@ -1,0 +1,32 @@
+[
+  {
+    "id": "rag-001",
+    "query": "How does the ProviderRouter handle 429 Rate Limit errors?",
+    "ground_truth": "The ProviderRouter trips a circuit breaker with a 60-second cooldown on 429 rate limit errors to fast-bypass network roundtrips.",
+    "expected_answer": "It trips a circuit breaker with a 60-second cooldown to fast-bypass the failing provider.",
+    "retrieved_contexts": [
+      "When a provider returns a 429 (Rate Limit) or 5xx (Server Error), the ProviderRouter trips a circuit breaker (default: 60-second cooldown).",
+      "Fast-bypass skips network roundtrips for providers currently in a cooldown state."
+    ]
+  },
+  {
+    "id": "rag-002",
+    "query": "What is the purpose of the evaluation cache?",
+    "ground_truth": "The evaluation cache uses SHA-256 hashing of all evaluation inputs to prevent duplicate API calls and reduce cost.",
+    "expected_answer": "It uses SHA-256 input hashing to prevent duplicate judge evaluation calls and lower costs.",
+    "retrieved_contexts": [
+      "All judge calls must pass through a prompt-hashing cache to prevent duplicate API hits during re-runs.",
+      "The EvalCache computes a SHA-256 hash of query, context, generated answer, model, and prompt template."
+    ]
+  },
+  {
+    "id": "rag-003",
+    "query": "How are prompt injection attacks isolated in the LLM Judge?",
+    "ground_truth": "Outputs from the System Under Test are wrapped in strict <untrusted_rag_output> XML tags with explicit instructions for the judge to treat them purely as data.",
+    "expected_answer": "SUT outputs are wrapped in <untrusted_rag_output> tags so the judge ignores embedded instructions.",
+    "retrieved_contexts": [
+      "Whenever passing output from a System Under Test to an LLM Judge, ALWAYS wrap the text in strict <untrusted_rag_output> XML tags.",
+      "Explicit instructions direct the judge never to follow commands inside untrusted tags."
+    ]
+  }
+]

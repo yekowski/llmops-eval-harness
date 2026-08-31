@@ -44,16 +44,37 @@ def generate_markdown_report(metrics: dict, thresholds: dict) -> str:
     relevance_change = format_delta(metrics.get("delta_relevance"), ".2f")
     correctness_change = format_delta(metrics.get("delta_correctness"), ".2f")
     
+    markdown_rows = [
+        f"| **Pass Rate** | >= {min_pass_rate * 100:.1f}% | {pass_rate_ratio * 100:.2f}% ({metrics['passed_count']}/{metrics['total_count']}) | {pass_rate_status} | {pass_rate_change} |",
+        f"| **Average Latency** | <= {max_latency:.1f} ms | {metrics['avg_latency_ms']:.2f} ms | {latency_status} | {latency_change} |",
+        f"| **Total Evaluation Cost** | <= ${max_cost:.4f} | ${metrics['total_cost_usd']:.6f} | {cost_status} | {cost_change} |",
+        f"| **Average Faithfulness** | >= {min_faithfulness:.2f} | {metrics['avg_faithfulness']:.2f} / 1.0 | {faithfulness_status} | {faithfulness_change} |",
+        f"| **Average Relevance** | >= {min_relevance:.2f} | {metrics['avg_relevance']:.2f} / 1.0 | {relevance_status} | {relevance_change} |",
+        f"| **Average Correctness** | >= {min_correctness:.2f} | {metrics['avg_correctness']:.2f} / 1.0 | {correctness_status} | {correctness_change} |"
+    ]
+
+    if "avg_context_precision" in metrics and metrics["avg_context_precision"] is not None:
+        min_precision = thresholds.get("min_context_precision", 0.0)
+        p_val = metrics["avg_context_precision"]
+        p_status = "✅ PASS" if p_val >= min_precision else "❌ FAIL"
+        p_change = format_delta(metrics.get("delta_context_precision"), ".2f")
+        thresh_str = f">= {min_precision:.2f}" if min_precision > 0 else "N/A"
+        markdown_rows.append(f"| **Average Context Precision** | {thresh_str} | {p_val:.2f} / 1.0 | {p_status} | {p_change} |")
+
+    if "avg_context_recall" in metrics and metrics["avg_context_recall"] is not None:
+        min_recall = thresholds.get("min_context_recall", 0.0)
+        r_val = metrics["avg_context_recall"]
+        r_status = "✅ PASS" if r_val >= min_recall else "❌ FAIL"
+        r_change = format_delta(metrics.get("delta_context_recall"), ".2f")
+        thresh_str = f">= {min_recall:.2f}" if min_recall > 0 else "N/A"
+        markdown_rows.append(f"| **Average Context Recall** | {thresh_str} | {r_val:.2f} / 1.0 | {r_status} | {r_change} |")
+
+    table_body = "\n".join(markdown_rows)
     markdown = f"""### LLMOps CI/CD Evaluation Report
 
 | Metric | SLA Threshold | Actual Value | Status | Change vs Baseline |
 | :--- | :--- | :--- | :--- | :--- |
-| **Pass Rate** | >= {min_pass_rate * 100:.1f}% | {pass_rate_ratio * 100:.2f}% ({metrics['passed_count']}/{metrics['total_count']}) | {pass_rate_status} | {pass_rate_change} |
-| **Average Latency** | <= {max_latency:.1f} ms | {metrics['avg_latency_ms']:.2f} ms | {latency_status} | {latency_change} |
-| **Total Evaluation Cost** | <= ${max_cost:.4f} | ${metrics['total_cost_usd']:.6f} | {cost_status} | {cost_change} |
-| **Average Faithfulness** | >= {min_faithfulness:.2f} | {metrics['avg_faithfulness']:.2f} / 1.0 | {faithfulness_status} | {faithfulness_change} |
-| **Average Relevance** | >= {min_relevance:.2f} | {metrics['avg_relevance']:.2f} / 1.0 | {relevance_status} | {relevance_change} |
-| **Average Correctness** | >= {min_correctness:.2f} | {metrics['avg_correctness']:.2f} / 1.0 | {correctness_status} | {correctness_change} |
+{table_body}
 
 **Overall SLA Status: {overall_status}**
 """

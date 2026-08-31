@@ -94,12 +94,25 @@ async def run_evaluation(
                     faithfulness = judge_res.get("faithfulness", 0.0)
                     relevance = judge_res.get("answer_relevance", 0.0)
                     correctness = judge_res.get("correctness", 0.0)
+
+                    context_precision = None
+                    context_recall = None
+                    if entry.retrieved_contexts and hasattr(judge, "evaluate_retrieval"):
+                        retrieval_res = await judge.evaluate_retrieval(
+                            query=entry.query,
+                            retrieved_contexts=entry.retrieved_contexts,
+                            ground_truth=entry.ground_truth or entry.expected_answer
+                        )
+                        context_precision = retrieval_res.get("context_precision")
+                        context_recall = retrieval_res.get("context_recall")
                 else:
                     # In Phase 1 / Fallback, we count a successful execution as 'passed'
                     passed = True
                     faithfulness = 1.0
                     relevance = 1.0
                     correctness = 1.0
+                    context_precision = 1.0 if entry.retrieved_contexts else None
+                    context_recall = 1.0 if entry.retrieved_contexts else None
                     
                 return EvaluationResult(
                     passed=passed,
@@ -108,6 +121,8 @@ async def run_evaluation(
                     faithfulness=faithfulness,
                     answer_relevance=relevance,
                     correctness=correctness,
+                    context_precision=context_precision,
+                    context_recall=context_recall,
                     judge_latency=judge_latency
                 )
             except Exception:
