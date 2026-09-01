@@ -2,7 +2,7 @@ import os
 import json
 import asyncio
 from src.cache.prompt_hash import PromptHashCache
-from src.evaluation.judge import GeminiJudge
+from src.evaluation.judge import LLMJudge
 from src.evaluation.meta_eval import run_meta_evaluation
 
 async def main():
@@ -16,7 +16,7 @@ async def main():
 
     # Initialize cache and judge
     cache = PromptHashCache()
-    judge = GeminiJudge(cache=cache)
+    judge = LLMJudge(cache=cache)
 
     print(f"Starting meta-evaluation of LLM Judge against {len(dataset)} human-labeled samples...")
     summary = await run_meta_evaluation(dataset, judge)

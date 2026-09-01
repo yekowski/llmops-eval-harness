@@ -10,7 +10,7 @@ import asyncio
 from src.schemas.models import DatasetEntry
 from src.clients.mock_client import MockRAGClient
 from src.utils.cache import EvalCache
-from src.evaluation.judge import GeminiJudge
+from src.evaluation.judge import LLMJudge
 from src.runners.async_runner import run_evaluation
 from src.reporters.markdown import generate_markdown_report
 from src.reporters.github import write_to_step_summary
@@ -167,7 +167,7 @@ async def main_async():
     judge_providers_cfg = judge_cfg.get("providers", {})
     judge_provider = build_provider_from_config(judge_fallback_chain, judge_providers_cfg)
 
-    judge = GeminiJudge(provider=judge_provider, cache=cache)
+    judge = LLMJudge(provider=judge_provider, cache=cache)
 
     if sut_provider and hasattr(sut_provider, "warmup"):
         await sut_provider.warmup()

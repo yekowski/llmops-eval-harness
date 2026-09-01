@@ -1,6 +1,6 @@
 import asyncio
 from typing import List, Dict, Tuple
-from src.evaluation.judge import GeminiJudge
+from src.evaluation.judge import LLMJudge
 
 def calculate_agreement_metrics(y_true: List[bool], y_pred: List[bool]) -> Tuple[float, float]:
     """Calculates observed agreement rate (accuracy) and Cohen's Kappa score."""
@@ -29,7 +29,7 @@ def calculate_agreement_metrics(y_true: List[bool], y_pred: List[bool]) -> Tuple
         
     return accuracy, kappa
 
-async def run_meta_evaluation(dataset: List[Dict], judge: GeminiJudge) -> Dict:
+async def run_meta_evaluation(dataset: List[Dict], judge: LLMJudge) -> Dict:
     """Runs LLM Judge evaluations concurrently over the dataset and computes meta-eval metrics."""
     tasks = []
     for item in dataset:

@@ -65,8 +65,8 @@ sut:
 
 ### LLM Judge Routing & Graceful Fallback
 
-- **With `GEMINI_API_KEY` present:** The Judge evaluates responses and retrieval context using Gemini Flash with strict `<untrusted_rag_output>` XML prompt isolation.
-- **Without `GEMINI_API_KEY`:** The Judge automatically and gracefully falls back to local deterministic rule-based grading (`_local_deterministic_grade` & `_local_deterministic_retrieval_grade`), preventing small local SUT models from being burdened with complex XML meta-eval prompts.
+- **With `GEMINI_API_KEY` present:** The `LLMJudge` evaluates responses and retrieval context using Gemini Flash with strict `<untrusted_rag_output>` XML prompt isolation.
+- **Without `GEMINI_API_KEY`:** The `LLMJudge` automatically and gracefully falls back to local deterministic rule-based grading (`_local_deterministic_grade` & `_local_deterministic_retrieval_grade`), preventing small local SUT models from being burdened with complex XML meta-eval prompts.
 
 ### Execution
 

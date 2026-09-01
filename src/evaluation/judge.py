@@ -3,11 +3,12 @@ import json
 from typing import Optional, List
 from src.evaluation.prompts.judge_templates import JUDGE_PROMPT_TEMPLATE, RETRIEVAL_JUDGE_PROMPT_TEMPLATE
 from src.utils.cache import EvalCache
+from src.utils.helpers import strip_markdown_json, resolve_error_status_code
 from src.providers.base import LLMProvider
 from src.providers.gemini import GeminiProvider
 from src.providers.deepseek import DeepSeekProvider
 
-class GeminiJudge:
+class LLMJudge:
     def __init__(
         self,
         provider: Optional[LLMProvider] = None,
@@ -88,21 +89,12 @@ class GeminiJudge:
         else:
             try:
                 text_response = await self.provider.generate(prompt)
-                
-                # Strip Markdown JSON fences if present
-                cleaned_response = text_response.strip()
-                if cleaned_response.startswith("```"):
-                    lines = cleaned_response.splitlines()
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].startswith("```"):
-                        lines = lines[:-1]
-                    cleaned_response = "\n".join(lines).strip()
-                    
+                cleaned_response = strip_markdown_json(text_response)
                 result = json.loads(cleaned_response)
             except Exception as e:
+                status_code = resolve_error_status_code(e)
                 msg = str(e).lower()
-                if "api key is required" in msg or "unauthorized" in msg or "401" in msg or "403" in msg or "all providers in fallback chain failed" in msg or "circuit open" in msg:
+                if status_code in [401, 403, 500] or "api key is required" in msg or "circuit open" in msg or "all providers in fallback chain failed" in msg:
                     result = self._local_deterministic_grade(context, expected_answer, generated_answer)
                 else:
                     raise
@@ -226,18 +218,12 @@ class GeminiJudge:
                     retrieved_contexts=formatted_contexts
                 )
                 text_response = await self.provider.generate(prompt)
-                cleaned_response = text_response.strip()
-                if cleaned_response.startswith("```"):
-                    lines = cleaned_response.splitlines()
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].startswith("```"):
-                        lines = lines[:-1]
-                    cleaned_response = "\n".join(lines).strip()
+                cleaned_response = strip_markdown_json(text_response)
                 result = json.loads(cleaned_response)
             except Exception as e:
+                status_code = resolve_error_status_code(e)
                 msg = str(e).lower()
-                if "api key is required" in msg or "unauthorized" in msg or "401" in msg or "403" in msg or "all providers in fallback chain failed" in msg or "circuit open" in msg:
+                if status_code in [401, 403, 500] or "api key is required" in msg or "circuit open" in msg or "all providers in fallback chain failed" in msg:
                     result = self._local_deterministic_retrieval_grade(q, retrieved_contexts, gt)
                 else:
                     raise
@@ -292,3 +278,7 @@ class GeminiJudge:
             "context_recall": r_val,
             "context_recall_reasoning": f"Local fallback: Word overlap recall is {r_val}."
         }
+
+# Backward compatibility alias
+GeminiJudge = LLMJudge
+

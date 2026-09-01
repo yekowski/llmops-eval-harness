@@ -9,12 +9,23 @@ class AnthropicProvider(LLMProvider):
         api_key: Optional[str] = None,
         model: str = "claude-3-5-sonnet-20240620",
         system: Optional[str] = None,
-        timeout: float = 30.0
+        timeout: float = 30.0,
+        client: Optional[httpx.AsyncClient] = None
     ):
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         self.model = model
         self.system = system
         self.timeout = timeout
+        self._client = client
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+        return self._client
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     async def generate(self, prompt: str, **kwargs) -> str:
         if not self.api_key:
@@ -41,11 +52,11 @@ class AnthropicProvider(LLMProvider):
             payload["system"] = system_prompt
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=payload, headers=headers, timeout=self.timeout)
-                response.raise_for_status()
-                data = response.json()
-                return data["content"][0]["text"]
+            client = self._get_client()
+            response = await client.post(url, json=payload, headers=headers, timeout=self.timeout)
+            response.raise_for_status()
+            data = response.json()
+            return data["content"][0]["text"]
         except httpx.HTTPStatusError as e:
             status_code = e.response.status_code
             if status_code == 429:

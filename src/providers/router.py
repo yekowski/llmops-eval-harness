@@ -1,10 +1,9 @@
 import sys
-from typing import List
-from src.providers.base import LLMProvider, ProviderRateLimitError, ProviderAPIError
-
 import time
 import asyncio
 from typing import List, Dict
+from src.providers.base import LLMProvider, ProviderRateLimitError, ProviderAPIError
+from src.utils.helpers import resolve_error_status_code
 
 class ProviderRouter(LLMProvider):
     def __init__(self, providers: List[LLMProvider]):
@@ -49,17 +48,7 @@ class ProviderRouter(LLMProvider):
 
                 await provider.generate("ping")
             except (ProviderRateLimitError, ProviderAPIError) as e:
-                status_code = getattr(e, "status_code", None)
-                if status_code is None:
-                    msg = str(e).lower()
-                    if "401" in msg or "unauthorized" in msg or "api key is required" in msg:
-                        status_code = 401
-                    elif "403" in msg or "forbidden" in msg:
-                        status_code = 403
-                    elif "429" in msg or "rate limited" in msg or "rate_limit" in msg:
-                        status_code = 429
-                    elif "500" in msg or "502" in msg or "503" in msg or "504" in msg:
-                        status_code = 500
+                status_code = resolve_error_status_code(e)
 
                 if status_code in [401, 403]:
                     print(f"[CIRCUIT DISABLED] Provider '{provider_name}' authentication failed. Disabling for entire run.", file=sys.stderr)
@@ -95,18 +84,7 @@ class ProviderRouter(LLMProvider):
                 return res
             except (ProviderRateLimitError, ProviderAPIError) as e:
                 # Resolve status code to distinguish transient vs permanent errors
-                status_code = getattr(e, "status_code", None)
-                if status_code is None:
-                    # Parse from error message if status_code wasn't explicitly set
-                    msg = str(e).lower()
-                    if "401" in msg or "unauthorized" in msg or "api key is required" in msg:
-                        status_code = 401
-                    elif "403" in msg or "forbidden" in msg:
-                        status_code = 403
-                    elif "429" in msg or "rate limited" in msg or "rate_limit" in msg:
-                        status_code = 429
-                    elif "500" in msg or "502" in msg or "503" in msg or "504" in msg:
-                        status_code = 500
+                status_code = resolve_error_status_code(e)
 
                 # Differentiated handling based on error permanence
                 if status_code in [401, 403]:

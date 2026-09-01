@@ -5,12 +5,12 @@ import random
 from typing import List, Optional
 from src.schemas.models import DatasetEntry, EvaluationResult
 from src.clients.base import SystemUnderTest
-from src.evaluation.judge import GeminiJudge
+from src.evaluation.judge import LLMJudge
 
 async def run_evaluation(
     entries: List[DatasetEntry],
     sut: SystemUnderTest,
-    judge: Optional[GeminiJudge] = None
+    judge: Optional[LLMJudge] = None
 ) -> List[EvaluationResult]:
     """Runs concurrent evaluation queries against the system under test (SUT) using asyncio.gather."""
     limit = 5 if judge else len(entries) + 1

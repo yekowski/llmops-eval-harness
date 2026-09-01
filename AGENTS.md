@@ -25,6 +25,7 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 ## Multi-Provider Model Adapters
 1. **Architecture**: Strict separation of concerns. External model calls must route through abstract Provider adapters. Never hardcode `httpx` in business logic.
 2. **Rule**: Always implement graceful degradation and exponential backoff for remote APIs.
+3. **Connection Pooling**: All async provider implementations must reuse a single persistent `httpx.AsyncClient` instance across requests for connection pooling, rather than instantiating a new client per request.
 
 ## SLA Configuration
 - Rule 4 (SLA Configuration): Never hardcode evaluation thresholds in Python logic. All SLA gates (faithfulness, latency, cost, etc.) must be dynamically loaded from the YAML configuration.
@@ -48,11 +49,11 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 - Rule 10 (Token Telemetry & Cost Accounting): All provider adapters must parse and expose standard token usage metadata (`prompt_tokens`, `completion_tokens`) to ensure accurate, uniform cost accounting across evaluations.
 
 ## RAG Retrieval Metrics Separability
-- Rule 11 (RAG Retrieval Metrics Separability): Retrieval evaluation metrics (Context Precision, Context Recall) must be structurally decoupled from generation metrics (Faithfulness, Relevance, Correctness) in both the dataset schema and the LLM Judge runner. Evaluation entries must gracefully accept optional `retrieved_contexts` (`List[str]`) and `ground_truth` (`str`) fields without breaking legacy prompt-response test cases.
+- Rule 11 (RAG Retrieval Metrics Separability): Retrieval evaluation metrics (Context Precision, Context Recall) must be structurally decoupled from generation metrics (Faithfulness, Relevance, Correctness) in both the dataset schema and the LLM Judge runner (`LLMJudge`). Evaluation entries must gracefully accept optional `retrieved_contexts` (`List[str]`) and `ground_truth` (`str`) fields without breaking legacy prompt-response test cases.
 
 ## Visualization Decoupling & Read-Only State
 - Rule 12 (Visualization Decoupling & Read-Only State): The dashboard must act as a strictly read-only presentation layer. It may parse `runs/history.jsonl` but must never mutate evaluation state, cache, or trigger evaluation runs.
 
 ## SUT vs. LLM Judge Provider Decoupling
-- Rule 13 (SUT vs. LLM Judge Provider Decoupling): SUT (System Under Test) execution and LLM Judge evaluation configurations must remain strictly decoupled and independent in `configs/*.yaml` (`sut` vs. `judge` blocks). Local SUT execution (e.g., Ollama, vLLM) must never force the LLM Judge to run on small local models; the Judge must independently route to capable cloud models (e.g., Gemini) or graceful deterministic local fallbacks.
+- Rule 13 (SUT vs. LLM Judge Provider Decoupling): SUT (System Under Test) execution and LLM Judge (`LLMJudge`) evaluation configurations must remain strictly decoupled and independent in `configs/*.yaml` (`sut` vs. `judge` blocks). Local SUT execution (e.g., Ollama, vLLM) must never force the LLM Judge to run on small local models; the Judge must independently route to capable cloud models (e.g., Gemini) or graceful deterministic local fallbacks.
 

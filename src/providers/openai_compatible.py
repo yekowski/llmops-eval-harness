@@ -11,7 +11,8 @@ class OpenAICompatibleProvider(LLMProvider):
         model: str = "gpt-4o",
         api_key_env_var: str = "OPENAI_API_KEY",
         temperature: Optional[float] = None,
-        timeout: Optional[float] = None
+        timeout: Optional[float] = None,
+        client: Optional[httpx.AsyncClient] = None
     ):
         self.base_url = base_url
         self.api_key = api_key or os.environ.get(api_key_env_var)
@@ -23,6 +24,16 @@ class OpenAICompatibleProvider(LLMProvider):
         self.temperature = temperature
         # Local models (CPU inference) need much longer timeouts than cloud APIs
         self.timeout = timeout or (120.0 if self._is_local else 10.0)
+        self._client = client
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+        return self._client
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     async def generate(self, prompt: str, **kwargs) -> str:
         if not self.api_key:
@@ -54,11 +65,11 @@ class OpenAICompatibleProvider(LLMProvider):
             payload["temperature"] = temp
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=payload, headers=headers, timeout=self.timeout)
-                response.raise_for_status()
-                data = response.json()
-                return data["choices"][0]["message"]["content"]
+            client = self._get_client()
+            response = await client.post(url, json=payload, headers=headers, timeout=self.timeout)
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
         except httpx.HTTPStatusError as e:
             status_code = e.response.status_code
             if status_code == 429:
