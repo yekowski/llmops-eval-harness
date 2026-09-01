@@ -10,15 +10,19 @@ class OpenAICompatibleProvider(LLMProvider):
         base_url: str = "https://api.openai.com/v1",
         model: str = "gpt-4o",
         api_key_env_var: str = "OPENAI_API_KEY",
-        temperature: Optional[float] = None
+        temperature: Optional[float] = None,
+        timeout: Optional[float] = None
     ):
         self.base_url = base_url
         self.api_key = api_key or os.environ.get(api_key_env_var)
-        if not self.api_key and any(loc in base_url for loc in ["localhost", "127.0.0.1", "11434", "8000", "0.0.0.0"]):
+        self._is_local = any(loc in base_url for loc in ["localhost", "127.0.0.1", "11434", "8000", "0.0.0.0"])
+        if not self.api_key and self._is_local:
             self.api_key = "local"
         self.model = model
         self.api_key_env_var = api_key_env_var
         self.temperature = temperature
+        # Local models (CPU inference) need much longer timeouts than cloud APIs
+        self.timeout = timeout or (120.0 if self._is_local else 10.0)
 
     async def generate(self, prompt: str, **kwargs) -> str:
         if not self.api_key:
@@ -50,7 +54,7 @@ class OpenAICompatibleProvider(LLMProvider):
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=payload, headers=headers, timeout=5.0)
+                response = await client.post(url, json=payload, headers=headers, timeout=self.timeout)
                 response.raise_for_status()
                 data = response.json()
                 return data["choices"][0]["message"]["content"]

@@ -19,6 +19,8 @@ class ProviderRouter(LLMProvider):
 
     async def warmup(self) -> None:
         """Sends a lightweight health check to each provider sequentially to pre-warm the circuit breaker before concurrent runs."""
+        import httpx
+
         for provider in self.providers:
             provider_name = provider.__class__.__name__
             if provider_name == "MockProvider":
@@ -30,6 +32,21 @@ class ProviderRouter(LLMProvider):
                 continue
 
             try:
+                # For local providers (Ollama/vLLM), use a lightweight HTTP health check
+                # instead of a full generation call that would take 30-60s on CPU
+                is_local = getattr(provider, "_is_local", False)
+                if is_local:
+                    base_url = getattr(provider, "base_url", "")
+                    # Ollama health check: GET /api/tags (fast, no inference)
+                    if "11434" in base_url or "ollama" in provider_name.lower():
+                        health_url = base_url.replace("/v1", "/api/tags")
+                    else:
+                        health_url = base_url.rstrip("/")
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.get(health_url, timeout=5.0)
+                        resp.raise_for_status()
+                    continue  # Healthy, skip to next provider
+
                 await provider.generate("ping")
             except (ProviderRateLimitError, ProviderAPIError) as e:
                 status_code = getattr(e, "status_code", None)
