@@ -1,5 +1,5 @@
 from src.clients.base import SystemUnderTest
-from src.providers.base import LLMProvider
+from src.providers.base import LLMProvider, ProviderResponse
 
 class LLMProviderSUT(SystemUnderTest):
     """Adapter that wraps an LLMProvider instance as a SystemUnderTest interface."""
@@ -7,4 +7,7 @@ class LLMProviderSUT(SystemUnderTest):
         self.provider = provider
 
     async def execute(self, query: str) -> str:
-        return await self.provider.generate(query)
+        response = await self.provider.generate(query)
+        if isinstance(response, ProviderResponse):
+            return response.text
+        return str(response)

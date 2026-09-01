@@ -2,7 +2,7 @@ import sys
 import time
 import asyncio
 from typing import List, Dict
-from src.providers.base import LLMProvider, ProviderRateLimitError, ProviderAPIError
+from src.providers.base import LLMProvider, ProviderResponse, ProviderRateLimitError, ProviderAPIError
 from src.utils.helpers import resolve_error_status_code
 
 class ProviderRouter(LLMProvider):
@@ -61,7 +61,7 @@ class ProviderRouter(LLMProvider):
             except Exception:
                 pass
 
-    async def generate(self, prompt: str, **kwargs) -> str:
+    async def generate(self, prompt: str, **kwargs) -> ProviderResponse:
         for i, provider in enumerate(self.providers):
             provider_name = provider.__class__.__name__
             
@@ -81,6 +81,8 @@ class ProviderRouter(LLMProvider):
                 res = await provider.generate(prompt, **kwargs)
                 latency = time.perf_counter() - start_time
                 generation_latency.set(latency)
+                if not isinstance(res, ProviderResponse):
+                    res = ProviderResponse(text=str(res), latency_ms=latency * 1000)
                 return res
             except (ProviderRateLimitError, ProviderAPIError) as e:
                 # Resolve status code to distinguish transient vs permanent errors

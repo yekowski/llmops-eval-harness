@@ -1,7 +1,10 @@
 import os
+import time
+import random
+import asyncio
 import httpx
 from typing import Optional
-from src.providers.base import LLMProvider, ProviderRateLimitError, ProviderAPIError
+from src.providers.base import LLMProvider, ProviderResponse, ProviderRateLimitError, ProviderAPIError
 
 class OpenAICompatibleProvider(LLMProvider):
     def __init__(
@@ -35,10 +38,10 @@ class OpenAICompatibleProvider(LLMProvider):
         if self._client and not self._client.is_closed:
             await self._client.aclose()
 
-    async def generate(self, prompt: str, **kwargs) -> str:
+    async def generate(self, prompt: str, **kwargs) -> ProviderResponse:
         if not self.api_key:
             raise ProviderAPIError(f"API key is required but not set (checked env var {self.api_key_env_var}).")
-            
+
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         headers = {
             "Content-Type": "application/json",
@@ -58,23 +61,52 @@ class OpenAICompatibleProvider(LLMProvider):
             payload["response_format"] = kwargs["response_format"]
         elif kwargs.get("json_mode"):
             payload["response_format"] = {"type": "json_object"}
-        
-        # Use temperature if specified in generate call or stored in provider
+
         temp = kwargs.get("temperature", self.temperature)
         if temp is not None:
             payload["temperature"] = temp
 
-        try:
-            client = self._get_client()
-            response = await client.post(url, json=payload, headers=headers, timeout=self.timeout)
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-        except httpx.HTTPStatusError as e:
-            status_code = e.response.status_code
-            if status_code == 429:
-                raise ProviderRateLimitError(f"{self.__class__.__name__} rate limited: {str(e)}", status_code=status_code)
-            else:
-                raise ProviderAPIError(f"{self.__class__.__name__} HTTP error {status_code}: {str(e)}", status_code=status_code)
-        except httpx.RequestError as e:
-            raise ProviderAPIError(f"{self.__class__.__name__} request error: {str(e)}")
+        client = self._get_client()
+        max_retries = 3
+        last_exception = None
+
+        for attempt in range(max_retries):
+            start_time = time.perf_counter()
+            try:
+                response = await client.post(url, json=payload, headers=headers, timeout=self.timeout)
+                response.raise_for_status()
+                data = response.json()
+                latency_ms = (time.perf_counter() - start_time) * 1000
+
+                text = data["choices"][0]["message"]["content"]
+                usage = data.get("usage", {})
+                prompt_tokens = usage.get("prompt_tokens", max(1, len(prompt) // 4))
+                completion_tokens = usage.get("completion_tokens", max(1, len(text) // 4))
+
+                return ProviderResponse(
+                    text=text,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    latency_ms=latency_ms
+                )
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+                last_exception = e
+                if status_code in [429, 500, 502, 503, 504] and attempt < max_retries - 1:
+                    backoff = (2 ** attempt) + random.uniform(0.1, 0.5)
+                    await asyncio.sleep(backoff)
+                    continue
+
+                if status_code == 429:
+                    raise ProviderRateLimitError(f"{self.__class__.__name__} rate limited: {str(e)}", status_code=status_code)
+                else:
+                    raise ProviderAPIError(f"{self.__class__.__name__} HTTP error {status_code}: {str(e)}", status_code=status_code)
+            except httpx.RequestError as e:
+                last_exception = e
+                if attempt < max_retries - 1:
+                    backoff = (2 ** attempt) + random.uniform(0.1, 0.5)
+                    await asyncio.sleep(backoff)
+                    continue
+                raise ProviderAPIError(f"{self.__class__.__name__} request error: {str(e)}")
+
+        raise ProviderAPIError(f"{self.__class__.__name__} API call failed after {max_retries} attempts: {last_exception}")
