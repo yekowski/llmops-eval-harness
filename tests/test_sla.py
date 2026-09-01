@@ -1,6 +1,6 @@
 import json
 import pytest
-from run_eval import enforce_slas_and_report
+from run_eval import enforce_slas_and_report, _compute_deltas, _evaluate_sla_gates
 from src.evaluation.judge import LLMJudge
 from src.providers.mock import MockProvider
 
@@ -104,3 +104,31 @@ def test_sla_score_regression_drop(tmp_path, monkeypatch, sample_metrics, defaul
         judge=judge
     )
     assert passed is False
+
+def test_compute_deltas_pure_function(sample_metrics):
+    baseline = {
+        "pass_rate_pct": 90.0,
+        "avg_latency_ms": 1000.0,
+        "total_cost_usd": 0.0005,
+        "faithfulness": 0.90,
+        "answer_relevance": 0.85,
+        "correctness": 0.88,
+        "context_precision": 0.80,
+        "context_recall": 0.80
+    }
+    deltas = _compute_deltas(sample_metrics, baseline)
+    assert deltas["delta_pass_rate_pct"] == 10.0
+    assert deltas["delta_latency_ms"] == 500.0
+    assert deltas["delta_faithfulness"] == pytest.approx(0.05)
+
+def test_evaluate_sla_gates_pure_function(sample_metrics, default_thresholds):
+    # Passing case
+    failures = _evaluate_sla_gates(sample_metrics, default_thresholds)
+    assert len(failures) == 0
+
+    # Failing case
+    sample_metrics["avg_faithfulness"] = 0.50
+    failures = _evaluate_sla_gates(sample_metrics, default_thresholds)
+    assert len(failures) == 1
+    assert "faithfulness" in failures[0]
+

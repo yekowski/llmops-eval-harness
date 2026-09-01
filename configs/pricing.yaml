@@ -1,0 +1,59 @@
+# LLM Model Pricing Configuration (Costs per 1,000 tokens in USD)
+# Last verified: 2026-09-01
+
+models:
+  # Google Gemini
+  gemini-3.5-flash:
+    input_cost_per_1k: 0.000075
+    output_cost_per_1k: 0.000300
+  gemini-1.5-flash:
+    input_cost_per_1k: 0.000075
+    output_cost_per_1k: 0.000300
+  gemini-1.5-pro:
+    input_cost_per_1k: 0.001250
+    output_cost_per_1k: 0.005000
+
+  # OpenAI
+  gpt-4o:
+    input_cost_per_1k: 0.005000
+    output_cost_per_1k: 0.015000
+  gpt-4o-mini:
+    input_cost_per_1k: 0.000150
+    output_cost_per_1k: 0.000600
+
+  # Anthropic
+  claude-3-5-sonnet-20240620:
+    input_cost_per_1k: 0.003000
+    output_cost_per_1k: 0.015000
+  claude-3-5-haiku:
+    input_cost_per_1k: 0.000800
+    output_cost_per_1k: 0.004000
+
+  # DeepSeek
+  deepseek-chat:
+    input_cost_per_1k: 0.000140
+    output_cost_per_1k: 0.000280
+  deepseek-reasoner:
+    input_cost_per_1k: 0.000550
+    output_cost_per_1k: 0.002190
+
+  # Meta / Open Source via Groq & Inference Providers
+  llama-3.3-70b-versatile:
+    input_cost_per_1k: 0.000050
+    output_cost_per_1k: 0.000080
+  llama3-8b-8192:
+    input_cost_per_1k: 0.000050
+    output_cost_per_1k: 0.000080
+
+  # Qwen
+  qwen-2.5-72b-instruct:
+    input_cost_per_1k: 0.000070
+    output_cost_per_1k: 0.000070
+
+  # Local Runtimes / Mock
+  mock:
+    input_cost_per_1k: 0.0
+    output_cost_per_1k: 0.0
+  local:
+    input_cost_per_1k: 0.0
+    output_cost_per_1k: 0.0

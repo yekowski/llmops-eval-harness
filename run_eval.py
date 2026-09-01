@@ -134,54 +134,65 @@ async def evaluate_dataset(entries: List[DatasetEntry], sut: SystemUnderTest, ju
     return results, metrics
 
 
-def enforce_slas_and_report(
-    metrics: dict,
-    sla_thresholds: dict,
-    config_path: str,
-    dataset_path: str,
-    sut_provider: Any,
-    judge: LLMJudge
-) -> bool:
-    """Computes deltas against baseline, enforces SLA gates, outputs markdown reports, and logs experiment history."""
-    baseline_path = "baseline.json"
-    baseline = {}
-    if os.path.exists(baseline_path):
-        try:
-            with open(baseline_path, "r") as f:
-                baseline = json.load(f)
-        except Exception as e:
-            print(f"[WARNING] Could not parse baseline.json: {e}")
+def _compute_deltas(metrics: dict, baseline: dict) -> dict:
+    """Pure function computing metric deltas against historical baseline values."""
+    deltas = {}
+    if not baseline:
+        return {
+            "delta_pass_rate_pct": None,
+            "delta_latency_ms": None,
+            "delta_cost_usd": None,
+            "delta_faithfulness": None,
+            "delta_relevance": None,
+            "delta_correctness": None,
+            "delta_context_precision": None,
+            "delta_context_recall": None
+        }
 
-    pass_rate_pct = metrics["pass_rate_pct"]
-    avg_latency_ms = metrics["avg_latency_ms"]
-    total_cost_usd = metrics["total_cost_usd"]
-    avg_faithfulness = metrics["avg_faithfulness"]
-    avg_relevance = metrics["avg_relevance"]
-    avg_correctness = metrics["avg_correctness"]
+    pass_rate_pct = metrics.get("pass_rate_pct", 0.0)
+    avg_latency_ms = metrics.get("avg_latency_ms", 0.0)
+    total_cost_usd = metrics.get("total_cost_usd", 0.0)
+    avg_faithfulness = metrics.get("avg_faithfulness", 0.0)
+    avg_relevance = metrics.get("avg_relevance", 0.0)
+    avg_correctness = metrics.get("avg_correctness", 0.0)
     avg_context_precision = metrics.get("avg_context_precision")
     avg_context_recall = metrics.get("avg_context_recall")
 
-    metrics["delta_pass_rate_pct"] = (pass_rate_pct - baseline["pass_rate_pct"]) if "pass_rate_pct" in baseline else None
-    metrics["delta_latency_ms"] = (avg_latency_ms - baseline["avg_latency_ms"]) if "avg_latency_ms" in baseline else None
-    metrics["delta_cost_usd"] = (total_cost_usd - baseline["total_cost_usd"]) if "total_cost_usd" in baseline else None
-    metrics["delta_faithfulness"] = (avg_faithfulness - baseline["faithfulness"]) if "faithfulness" in baseline else None
-    metrics["delta_relevance"] = (avg_relevance - baseline["answer_relevance"]) if "answer_relevance" in baseline else None
-    metrics["delta_correctness"] = (avg_correctness - baseline["correctness"]) if "correctness" in baseline else None
-    metrics["delta_context_precision"] = (avg_context_precision - baseline["context_precision"]) if ("context_precision" in baseline and avg_context_precision is not None) else None
-    metrics["delta_context_recall"] = (avg_context_recall - baseline["context_recall"]) if ("context_recall" in baseline and avg_context_recall is not None) else None
+    deltas["delta_pass_rate_pct"] = (pass_rate_pct - baseline["pass_rate_pct"]) if "pass_rate_pct" in baseline else None
+    deltas["delta_latency_ms"] = (avg_latency_ms - baseline["avg_latency_ms"]) if "avg_latency_ms" in baseline else None
+    deltas["delta_cost_usd"] = (total_cost_usd - baseline["total_cost_usd"]) if "total_cost_usd" in baseline else None
+    deltas["delta_faithfulness"] = (avg_faithfulness - baseline["faithfulness"]) if "faithfulness" in baseline else None
+    deltas["delta_relevance"] = (avg_relevance - baseline["answer_relevance"]) if "answer_relevance" in baseline else None
+    deltas["delta_correctness"] = (avg_correctness - baseline["correctness"]) if "correctness" in baseline else None
+    deltas["delta_context_precision"] = (avg_context_precision - baseline["context_precision"]) if ("context_precision" in baseline and avg_context_precision is not None) else None
+    deltas["delta_context_recall"] = (avg_context_recall - baseline["context_recall"]) if ("context_recall" in baseline and avg_context_recall is not None) else None
+    return deltas
 
-    min_pass_rate = sla_thresholds.get("min_pass_rate", 0.0)
-    min_faithfulness = sla_thresholds.get("min_faithfulness", 0.0)
-    min_relevance = sla_thresholds.get("min_relevance", 0.0)
-    min_correctness = sla_thresholds.get("min_correctness", 0.0)
-    min_context_precision = sla_thresholds.get("min_context_precision")
-    min_context_recall = sla_thresholds.get("min_context_recall")
-    max_latency = sla_thresholds.get("max_latency_ms", float("inf"))
-    max_cost = sla_thresholds.get("max_cost_usd", float("inf"))
-    max_score_drop = sla_thresholds.get("max_score_drop", float("inf"))
+
+def _evaluate_sla_gates(metrics: dict, thresholds: dict) -> List[str]:
+    """Pure function evaluating absolute and regression SLA gates, returning failure reasons if any."""
+    min_pass_rate = thresholds.get("min_pass_rate", 0.0)
+    min_faithfulness = thresholds.get("min_faithfulness", 0.0)
+    min_relevance = thresholds.get("min_relevance", 0.0)
+    min_correctness = thresholds.get("min_correctness", 0.0)
+    min_context_precision = thresholds.get("min_context_precision")
+    min_context_recall = thresholds.get("min_context_recall")
+    max_latency = thresholds.get("max_latency_ms", float("inf"))
+    max_cost = thresholds.get("max_cost_usd", float("inf"))
+    max_score_drop = thresholds.get("max_score_drop", float("inf"))
 
     failures = []
-    pass_rate_ratio = metrics["passed_count"] / metrics["total_count"] if metrics["total_count"] > 0 else 0.0
+    total_count = metrics.get("total_count", 0)
+    passed_count = metrics.get("passed_count", 0)
+    pass_rate_ratio = passed_count / total_count if total_count > 0 else 0.0
+
+    avg_faithfulness = metrics.get("avg_faithfulness", 0.0)
+    avg_relevance = metrics.get("avg_relevance", 0.0)
+    avg_correctness = metrics.get("avg_correctness", 0.0)
+    avg_context_precision = metrics.get("avg_context_precision")
+    avg_context_recall = metrics.get("avg_context_recall")
+    avg_latency_ms = metrics.get("avg_latency_ms", 0.0)
+    total_cost_usd = metrics.get("total_cost_usd", 0.0)
 
     if pass_rate_ratio < min_pass_rate:
         failures.append(f"pass_rate {pass_rate_ratio:.2f} < required {min_pass_rate:.2f}")
@@ -202,16 +213,44 @@ def enforce_slas_and_report(
     if total_cost_usd > max_cost:
         failures.append(f"cost {total_cost_usd:.6f} > required {max_cost:.4f}")
 
-    if "faithfulness" in baseline and metrics["delta_faithfulness"] is not None:
-        if metrics["delta_faithfulness"] < -max_score_drop:
-            failures.append(f"Faithfulness dropped by {abs(metrics['delta_faithfulness']):.2f} > allowed {max_score_drop:.2f} limit")
-    if "answer_relevance" in baseline and metrics["delta_relevance"] is not None:
-        if metrics["delta_relevance"] < -max_score_drop:
-            failures.append(f"Relevance dropped by {abs(metrics['delta_relevance']):.2f} > allowed {max_score_drop:.2f} limit")
-    if "correctness" in baseline and metrics["delta_correctness"] is not None:
-        if metrics["delta_correctness"] < -max_score_drop:
-            failures.append(f"Correctness dropped by {abs(metrics['delta_correctness']):.2f} > allowed {max_score_drop:.2f} limit")
+    # Baseline regression checks
+    delta_faith = metrics.get("delta_faithfulness")
+    if delta_faith is not None and delta_faith < -max_score_drop:
+        failures.append(f"Faithfulness dropped by {abs(delta_faith):.2f} > allowed {max_score_drop:.2f} limit")
 
+    delta_rel = metrics.get("delta_relevance")
+    if delta_rel is not None and delta_rel < -max_score_drop:
+        failures.append(f"Relevance dropped by {abs(delta_rel):.2f} > allowed {max_score_drop:.2f} limit")
+
+    delta_corr = metrics.get("delta_correctness")
+    if delta_corr is not None and delta_corr < -max_score_drop:
+        failures.append(f"Correctness dropped by {abs(delta_corr):.2f} > allowed {max_score_drop:.2f} limit")
+
+    return failures
+
+
+def enforce_slas_and_report(
+    metrics: dict,
+    sla_thresholds: dict,
+    config_path: str,
+    dataset_path: str,
+    sut_provider: Any,
+    judge: LLMJudge,
+    baseline_path: str = "baseline.json"
+) -> bool:
+    """Computes deltas against baseline, enforces SLA gates, outputs markdown reports, and logs experiment history."""
+    baseline = {}
+    if os.path.exists(baseline_path):
+        try:
+            with open(baseline_path, "r") as f:
+                baseline = json.load(f)
+        except Exception as e:
+            print(f"[WARNING] Could not parse {baseline_path}: {e}")
+
+    deltas = _compute_deltas(metrics, baseline)
+    metrics.update(deltas)
+
+    failures = _evaluate_sla_gates(metrics, sla_thresholds)
     sla_passed = len(failures) == 0
     metrics["sla_passed"] = sla_passed
 
@@ -220,34 +259,29 @@ def enforce_slas_and_report(
     write_to_step_summary(markdown_report)
 
     tracker = ExperimentTracker()
-    if sut_provider:
-        if hasattr(sut_provider, "active_provider"):
-            sut_provider_name = sut_provider.active_provider.__class__.__name__
-        else:
-            sut_provider_name = sut_provider.__class__.__name__
-    else:
-        sut_provider_name = "MockRAGClient"
-
-    if hasattr(judge, "provider") and judge.provider:
-        if hasattr(judge.provider, "active_provider"):
-            judge_provider_name = judge.provider.active_provider.__class__.__name__
-        else:
-            judge_provider_name = judge.provider.__class__.__name__
-    else:
-        judge_provider_name = judge.__class__.__name__
+    sut_provider_name = (
+        sut_provider.active_provider.__class__.__name__ if hasattr(sut_provider, "active_provider")
+        else sut_provider.__class__.__name__ if sut_provider
+        else "MockRAGClient"
+    )
+    judge_provider_name = (
+        judge.provider.active_provider.__class__.__name__ if (hasattr(judge, "provider") and hasattr(judge.provider, "active_provider"))
+        else judge.provider.__class__.__name__ if (hasattr(judge, "provider") and judge.provider)
+        else judge.__class__.__name__
+    )
 
     aggregate_metrics = {
-        "faithfulness": avg_faithfulness,
-        "relevance": avg_relevance,
-        "correctness": avg_correctness,
-        "pass_rate": pass_rate_pct,
-        "latency": avg_latency_ms,
-        "cost": total_cost_usd
+        "faithfulness": metrics["avg_faithfulness"],
+        "relevance": metrics["avg_relevance"],
+        "correctness": metrics["avg_correctness"],
+        "pass_rate": metrics["pass_rate_pct"],
+        "latency": metrics["avg_latency_ms"],
+        "cost": metrics["total_cost_usd"]
     }
-    if avg_context_precision is not None:
-        aggregate_metrics["context_precision"] = avg_context_precision
-    if avg_context_recall is not None:
-        aggregate_metrics["context_recall"] = avg_context_recall
+    if metrics.get("avg_context_precision") is not None:
+        aggregate_metrics["context_precision"] = metrics["avg_context_precision"]
+    if metrics.get("avg_context_recall") is not None:
+        aggregate_metrics["context_recall"] = metrics["avg_context_recall"]
 
     try:
         run_id = tracker.log_run(
@@ -269,23 +303,23 @@ def enforce_slas_and_report(
         return False
     else:
         new_baseline = {
-            "pass_rate_pct": pass_rate_pct,
-            "avg_latency_ms": avg_latency_ms,
-            "total_cost_usd": total_cost_usd,
-            "faithfulness": avg_faithfulness,
-            "answer_relevance": avg_relevance,
-            "correctness": avg_correctness
+            "pass_rate_pct": metrics["pass_rate_pct"],
+            "avg_latency_ms": metrics["avg_latency_ms"],
+            "total_cost_usd": metrics["total_cost_usd"],
+            "faithfulness": metrics["avg_faithfulness"],
+            "answer_relevance": metrics["avg_relevance"],
+            "correctness": metrics["avg_correctness"]
         }
-        if avg_context_precision is not None:
-            new_baseline["context_precision"] = avg_context_precision
-        if avg_context_recall is not None:
-            new_baseline["context_recall"] = avg_context_recall
+        if metrics.get("avg_context_precision") is not None:
+            new_baseline["context_precision"] = metrics["avg_context_precision"]
+        if metrics.get("avg_context_recall") is not None:
+            new_baseline["context_recall"] = metrics["avg_context_recall"]
         try:
             with open(baseline_path, "w") as f:
                 json.dump(new_baseline, f, indent=2)
             print(f"Saved new baseline scores to {baseline_path}")
         except Exception as e:
-            print(f"[WARNING] Could not save baseline.json: {e}")
+            print(f"[WARNING] Could not save {baseline_path}: {e}")
 
         print("✅ SLA check PASSED! Ready for integration.")
         return True
@@ -304,6 +338,12 @@ async def main_async():
         type=str,
         default="datasets/benchmarks/human_labeled.json",
         help="Path to the evaluation dataset JSON file"
+    )
+    parser.add_argument(
+        "--baseline",
+        type=str,
+        default="baseline.json",
+        help="Path to baseline metrics JSON file for regression checks (default: baseline.json)"
     )
     parser.add_argument(
         "--history",
@@ -328,7 +368,8 @@ async def main_async():
         config_path=args.config,
         dataset_path=dataset_path,
         sut_provider=sut_provider,
-        judge=judge
+        judge=judge,
+        baseline_path=args.baseline
     )
 
     sys.exit(0 if sla_passed else 1)

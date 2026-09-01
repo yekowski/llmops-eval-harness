@@ -5,6 +5,7 @@ from src.utils.cache import EvalCache
 from src.utils.helpers import strip_markdown_json, resolve_error_status_code
 from src.providers.base import LLMProvider, ProviderResponse
 from src.providers.gemini import GeminiProvider
+from src.utils.pricing import calculate_token_cost
 
 class LLMJudge:
     def __init__(
@@ -115,29 +116,8 @@ class LLMJudge:
         if output_tokens == 0:
             output_tokens = max(1, len(json.dumps(result)) // 4)
 
-        pricing_input = 0.000075 / 1000.0  # Default to gemini-3.5-flash
-        pricing_output = 0.000300 / 1000.0
-
-        if hasattr(self.provider, "model"):
-            model_str = str(self.provider.model).lower()
-            if "deepseek" in model_str:
-                pricing_input = 0.000140 / 1000.0
-                pricing_output = 0.000280 / 1000.0
-            elif "gpt-" in model_str:
-                pricing_input = 0.005000 / 1000.0
-                pricing_output = 0.015000 / 1000.0
-            elif "claude-" in model_str:
-                pricing_input = 0.003000 / 1000.0
-                pricing_output = 0.015000 / 1000.0
-            elif "llama" in model_str or "groq" in model_str:
-                pricing_input = 0.000050 / 1000.0
-                pricing_output = 0.000080 / 1000.0
-            elif "qwen" in model_str:
-                pricing_input = 0.000070 / 1000.0
-                pricing_output = 0.000070 / 1000.0
-
         if result.get("judge_mode") != "fallback":
-            call_cost = input_tokens * pricing_input + output_tokens * pricing_output
+            call_cost = calculate_token_cost(model_name, input_tokens, output_tokens)
             self.total_cost += call_cost
 
         if self.cache:
