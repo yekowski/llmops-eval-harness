@@ -4,56 +4,76 @@ This guide documents standard operational workflows for local model evaluation, 
 
 ---
 
-## 1. Running Local Evaluations with Ollama / vLLM
+## 1. Running Local Evaluations with Ollama / vLLM & Decoupled Judge
 
-Local model runtimes (such as Ollama or vLLM) expose OpenAI-compatible HTTP endpoints. You can run evaluations locally without incurring cloud API costs or consuming remote rate limits.
+Local model runtimes (such as Ollama or vLLM) expose OpenAI-compatible HTTP endpoints. You can run SUT generation locally without incurring cloud API costs or consuming remote rate limits, while delegating evaluation to a capable LLM Judge (Gemini Flash) or deterministic fallback.
 
-### Configuration Setup
+### Configuration Setup (Decoupled SUT & Judge)
 
-To route evaluation requests to a local runtime, update your configuration YAML (e.g., `configs/pr.yaml` or a local development config) to specify the local provider `base_url` and target `model`:
+To decouple local SUT execution from evaluation judging, structure `configs/local.yaml` with dedicated `sut` and `judge` provider configuration blocks:
 
 ```yaml
-# configs/local_eval.yaml
+# configs/local.yaml
 dataset_path: "data/adversarial_eval.json"
 
 sla_thresholds:
   min_faithfulness: 0.85
   min_relevance: 0.80
   min_correctness: 0.85
+  min_context_precision: 0.75
+  min_context_recall: 0.75
   min_pass_rate: 0.90
   max_latency_ms: 3000
   max_cost_usd: 0.05
   max_score_drop: 0.03
 
-fallback_chain:
-  - "ollama"
-  - "mock"
+# System Under Test (SUT) Provider Configuration
+sut:
+  fallback_chain:
+    - "ollama"
+    - "mock"
+  providers:
+    ollama:
+      base_url: "http://localhost:11434/v1"
+      model: "llama3.2:3b"
+      temperature: 0.0
 
-providers:
-  ollama:
-    base_url: "http://localhost:11434/v1"
-    model: "llama3.2:3b"
-    temperature: 0.0
+# LLM Judge Provider Configuration (Decoupled from SUT)
+judge:
+  fallback_chain:
+    - "gemini"
+  providers:
+    gemini:
+      model: "gemini-3.5-flash"
 ```
 
-### Running Local vLLM Endpoints
+### Running Local vLLM Endpoints as SUT
 
-For high-throughput local inference via vLLM:
+For high-throughput local SUT inference via vLLM:
 
 ```yaml
-providers:
-  vllm:
-    base_url: "http://localhost:8000/v1"
-    model: "mistralai/Mistral-7B-Instruct-v0.2"
-    temperature: 0.0
+sut:
+  fallback_chain:
+    - "vllm"
+    - "mock"
+  providers:
+    vllm:
+      base_url: "http://localhost:8000/v1"
+      model: "mistralai/Mistral-7B-Instruct-v0.2"
+      temperature: 0.0
 ```
+
+### LLM Judge Routing & Graceful Fallback
+
+- **With `GEMINI_API_KEY` present:** The Judge evaluates responses and retrieval context using Gemini Flash with strict `<untrusted_rag_output>` XML prompt isolation.
+- **Without `GEMINI_API_KEY`:** The Judge automatically and gracefully falls back to local deterministic rule-based grading (`_local_deterministic_grade` & `_local_deterministic_retrieval_grade`), preventing small local SUT models from being burdened with complex XML meta-eval prompts.
 
 ### Execution
 
 Execute the evaluation harness targeting your local config:
 
 ```bash
-PYTHONPATH=. python3 run_eval.py --config configs/local_eval.yaml
+PYTHONPATH=. python3 run_eval.py --config configs/local.yaml
 ```
 
 ---

@@ -15,6 +15,57 @@ from src.runners.async_runner import run_evaluation
 from src.reporters.markdown import generate_markdown_report
 from src.reporters.github import write_to_step_summary
 
+def build_provider_from_config(fallback_chain, providers_config=None):
+    """Builds a ProviderRouter from a fallback chain list and provider options dict."""
+    if not fallback_chain:
+        return None
+    from src.providers import (
+        GeminiProvider, OpenAIProvider, DeepSeekProvider, GroqProvider,
+        QwenProvider, AnthropicProvider, MockProvider, OllamaProvider,
+        VLLMProvider, ProviderRouter
+    )
+    chain_instances = []
+    providers_config = providers_config or {}
+    for name in fallback_chain:
+        name_lower = name.lower()
+        prov_opts = providers_config.get(name_lower, {})
+        model_name = prov_opts.get("model")
+        temperature = prov_opts.get("temperature")
+        base_url = prov_opts.get("base_url")
+        
+        kwargs = {}
+        if model_name is not None:
+            kwargs["model"] = model_name
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        if base_url is not None:
+            kwargs["base_url"] = base_url
+            
+        if name_lower == "gemini":
+            gemini_kwargs = {}
+            if model_name is not None:
+                gemini_kwargs["model"] = model_name
+            chain_instances.append(GeminiProvider(**gemini_kwargs))
+        elif name_lower == "openai":
+            chain_instances.append(OpenAIProvider(**kwargs))
+        elif name_lower == "deepseek":
+            chain_instances.append(DeepSeekProvider(**kwargs))
+        elif name_lower == "groq":
+            chain_instances.append(GroqProvider(**kwargs))
+        elif name_lower == "qwen":
+            chain_instances.append(QwenProvider(**kwargs))
+        elif name_lower == "anthropic":
+            chain_instances.append(AnthropicProvider(**kwargs))
+        elif name_lower == "ollama":
+            chain_instances.append(OllamaProvider(**kwargs))
+        elif name_lower == "vllm":
+            chain_instances.append(VLLMProvider(**kwargs))
+        elif name_lower == "mock":
+            chain_instances.append(MockProvider())
+        else:
+            raise ValueError(f"Unknown provider name '{name}' in config fallback_chain.")
+    return ProviderRouter(chain_instances)
+
 async def main_async():
     parser = argparse.ArgumentParser(description="LLMOps CI/CD Evaluation Runner")
     parser.add_argument(
@@ -92,69 +143,36 @@ async def main_async():
     # 3. Instantiate SUT, Cache, and Judge
     cache = EvalCache()
     
-    # Initialize LLM Provider fallback chain if configured
-    provider = None
-    fallback_chain = config.get("fallback_chain")
-    if fallback_chain:
-        from src.providers import GeminiProvider, OpenAIProvider, DeepSeekProvider, GroqProvider, QwenProvider, AnthropicProvider, MockProvider, OllamaProvider, VLLMProvider, ProviderRouter
-        chain_instances = []
-        providers_config = config.get("providers", {})
-        for name in fallback_chain:
-            name_lower = name.lower()
-            prov_opts = providers_config.get(name_lower, {})
-            model_name = prov_opts.get("model")
-            temperature = prov_opts.get("temperature")
-            base_url = prov_opts.get("base_url")
-            
-            kwargs = {}
-            if model_name is not None:
-                kwargs["model"] = model_name
-            if temperature is not None:
-                kwargs["temperature"] = temperature
-            if base_url is not None:
-                kwargs["base_url"] = base_url
-                
-            if name_lower == "gemini":
-                gemini_kwargs = {}
-                if model_name is not None:
-                    gemini_kwargs["model"] = model_name
-                chain_instances.append(GeminiProvider(**gemini_kwargs))
-            elif name_lower == "openai":
-                chain_instances.append(OpenAIProvider(**kwargs))
-            elif name_lower == "deepseek":
-                chain_instances.append(DeepSeekProvider(**kwargs))
-            elif name_lower == "groq":
-                chain_instances.append(GroqProvider(**kwargs))
-            elif name_lower == "qwen":
-                chain_instances.append(QwenProvider(**kwargs))
-            elif name_lower == "anthropic":
-                chain_instances.append(AnthropicProvider(**kwargs))
-            elif name_lower == "ollama":
-                chain_instances.append(OllamaProvider(**kwargs))
-            elif name_lower == "vllm":
-                chain_instances.append(VLLMProvider(**kwargs))
-            elif name_lower == "mock":
-                chain_instances.append(MockProvider())
-            else:
-                raise ValueError(f"Unknown provider name '{name}' in config fallback_chain.")
-        provider = ProviderRouter(chain_instances)
+    # 3a. Initialize SUT Provider fallback chain
+    sut_cfg = config.get("sut", {})
+    sut_fallback_chain = sut_cfg.get("fallback_chain") if "sut" in config else config.get("fallback_chain")
+    sut_providers_cfg = sut_cfg.get("providers") if "sut" in config else config.get("providers", {})
+    sut_provider = build_provider_from_config(sut_fallback_chain, sut_providers_cfg)
 
     # Initialize SUT wrapping the fallback provider router if configured
-    if provider:
+    if sut_provider:
         from src.clients.base import SystemUnderTest
         class LLMProviderSUT(SystemUnderTest):
             def __init__(self, prov):
                 self.prov = prov
             async def execute(self, query: str) -> str:
                 return await self.prov.generate(query)
-        sut = LLMProviderSUT(provider)
+        sut = LLMProviderSUT(sut_provider)
     else:
         sut = MockRAGClient()
 
-    judge = GeminiJudge(provider=provider, cache=cache)
+    # 3b. Initialize Judge Provider (Decoupled from SUT)
+    judge_cfg = config.get("judge", {})
+    judge_fallback_chain = judge_cfg.get("fallback_chain")
+    judge_providers_cfg = judge_cfg.get("providers", {})
+    judge_provider = build_provider_from_config(judge_fallback_chain, judge_providers_cfg)
 
-    if provider and hasattr(provider, "warmup"):
-        await provider.warmup()
+    judge = GeminiJudge(provider=judge_provider, cache=cache)
+
+    if sut_provider and hasattr(sut_provider, "warmup"):
+        await sut_provider.warmup()
+    if judge_provider and hasattr(judge_provider, "warmup"):
+        await judge_provider.warmup()
 
     print(f"Running evaluation of {len(entries)} entries concurrently against SUT...")
     results = await run_evaluation(entries, sut, judge)
@@ -275,21 +293,21 @@ async def main_async():
     tracker = ExperimentTracker()
     
     # Resolve provider names
-    if provider:
-        if hasattr(provider, "active_provider"):
-            sut_provider = provider.active_provider.__class__.__name__
+    if sut_provider:
+        if hasattr(sut_provider, "active_provider"):
+            sut_provider_name = sut_provider.active_provider.__class__.__name__
         else:
-            sut_provider = provider.__class__.__name__
+            sut_provider_name = sut_provider.__class__.__name__
     else:
-        sut_provider = "MockRAGClient"
+        sut_provider_name = "MockRAGClient"
         
     if hasattr(judge, "provider") and judge.provider:
         if hasattr(judge.provider, "active_provider"):
-            judge_provider = judge.provider.active_provider.__class__.__name__
+            judge_provider_name = judge.provider.active_provider.__class__.__name__
         else:
-            judge_provider = judge.provider.__class__.__name__
+            judge_provider_name = judge.provider.__class__.__name__
     else:
-        judge_provider = judge.__class__.__name__
+        judge_provider_name = judge.__class__.__name__
 
     aggregate_metrics = {
         "faithfulness": avg_faithfulness,
@@ -308,8 +326,8 @@ async def main_async():
         run_id = tracker.log_run(
             config_path=args.config,
             dataset_path=dataset_path,
-            sut_provider=sut_provider,
-            judge_provider=judge_provider,
+            sut_provider=sut_provider_name,
+            judge_provider=judge_provider_name,
             aggregate_metrics=aggregate_metrics,
             sla_passed=sla_passed
         )

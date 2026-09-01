@@ -52,3 +52,7 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 
 ## Visualization Decoupling & Read-Only State
 - Rule 12 (Visualization Decoupling & Read-Only State): The dashboard must act as a strictly read-only presentation layer. It may parse `runs/history.jsonl` but must never mutate evaluation state, cache, or trigger evaluation runs.
+
+## SUT vs. LLM Judge Provider Decoupling
+- Rule 13 (SUT vs. LLM Judge Provider Decoupling): SUT (System Under Test) execution and LLM Judge evaluation configurations must remain strictly decoupled and independent in `configs/*.yaml` (`sut` vs. `judge` blocks). Local SUT execution (e.g., Ollama, vLLM) must never force the LLM Judge to run on small local models; the Judge must independently route to capable cloud models (e.g., Gemini) or graceful deterministic local fallbacks.
+

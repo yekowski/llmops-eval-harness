@@ -41,11 +41,12 @@ class OpenAICompatibleProvider(LLMProvider):
             "model": target_model,
             "messages": [
                 {"role": "user", "content": prompt}
-            ],
-            "response_format": {
-                "type": "json_object"
-            }
+            ]
         }
+        if "response_format" in kwargs:
+            payload["response_format"] = kwargs["response_format"]
+        elif kwargs.get("json_mode"):
+            payload["response_format"] = {"type": "json_object"}
         
         # Use temperature if specified in generate call or stored in provider
         temp = kwargs.get("temperature", self.temperature)

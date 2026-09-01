@@ -12,12 +12,22 @@ sla_thresholds:
   max_cost_usd: 0.05
   max_score_drop: 0.03
 
-fallback_chain:
-  - "groq"
-  - "gemini"
-  - "mock"
+# System Under Test (SUT) Provider Configuration
+sut:
+  fallback_chain:
+    - "groq"
+    - "gemini"
+    - "mock"
+  providers:
+    groq:
+      model: "llama-3.3-70b-versatile"
+      temperature: 0.0
 
-providers:
-  groq:
-    model: "llama-3.3-70b-versatile"
-    temperature: 0.0
+# LLM Judge Provider Configuration (Decoupled from SUT)
+judge:
+  fallback_chain:
+    - "gemini"
+  providers:
+    gemini:
+      model: "gemini-3.5-flash"
+

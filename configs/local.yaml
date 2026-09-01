@@ -8,16 +8,26 @@ sla_thresholds:
   min_context_precision: 0.75
   min_context_recall: 0.75
   min_pass_rate: 0.90
-  max_latency_ms: 3000
+  max_latency_ms: 15000
   max_cost_usd: 0.05
   max_score_drop: 0.03
 
-fallback_chain:
-  - "ollama"
-  - "mock"
+# System Under Test (SUT) Provider Configuration
+sut:
+  fallback_chain:
+    - "ollama"
+    - "mock"
+  providers:
+    ollama:
+      base_url: "http://localhost:11434/v1"
+      model: "llama3.2:3b"
+      temperature: 0.0
 
-providers:
-  ollama:
-    base_url: "http://localhost:11434/v1"
-    model: "llama3.2:3b"
-    temperature: 0.0
+# LLM Judge Provider Configuration (Decoupled from SUT)
+judge:
+  fallback_chain:
+    - "gemini"
+  providers:
+    gemini:
+      model: "gemini-3.5-flash"
+

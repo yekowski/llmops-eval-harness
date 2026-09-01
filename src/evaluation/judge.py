@@ -36,6 +36,24 @@ class GeminiJudge:
         else:
             return self.cache.get("", context, generated_answer)
 
+    def _is_local_fallback_required(self) -> bool:
+        """Determines if the judge should use local deterministic grading because no remote API key is configured."""
+        if not self.provider:
+            return True
+        if hasattr(self.provider, "api_key"):
+            return not bool(self.provider.api_key)
+        if hasattr(self.provider, "providers"):
+            has_valid_key = False
+            for p in self.provider.providers:
+                if p.__class__.__name__ == "MockProvider":
+                    has_valid_key = True
+                    break
+                if getattr(p, "api_key", None):
+                    has_valid_key = True
+                    break
+            return not has_valid_key
+        return False
+
     async def evaluate(self, context: str, expected_answer: str, generated_answer: str, query: Optional[str] = None) -> dict:
         """Evaluates a generated response against context and expected answer."""
         q = query if query is not None else expected_answer
@@ -65,22 +83,29 @@ class GeminiJudge:
         )
 
         # Fallback to local rule-based grading if API key is not present in the provider
-        if hasattr(self.provider, "api_key") and not self.provider.api_key:
+        if self._is_local_fallback_required():
             result = self._local_deterministic_grade(context, expected_answer, generated_answer)
         else:
-            text_response = await self.provider.generate(prompt)
-            
-            # Strip Markdown JSON fences if present
-            cleaned_response = text_response.strip()
-            if cleaned_response.startswith("```"):
-                lines = cleaned_response.splitlines()
-                if lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines and lines[-1].startswith("```"):
-                    lines = lines[:-1]
-                cleaned_response = "\n".join(lines).strip()
+            try:
+                text_response = await self.provider.generate(prompt)
                 
-            result = json.loads(cleaned_response)
+                # Strip Markdown JSON fences if present
+                cleaned_response = text_response.strip()
+                if cleaned_response.startswith("```"):
+                    lines = cleaned_response.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    cleaned_response = "\n".join(lines).strip()
+                    
+                result = json.loads(cleaned_response)
+            except Exception as e:
+                msg = str(e).lower()
+                if "api key is required" in msg or "unauthorized" in msg or "401" in msg or "403" in msg or "all providers in fallback chain failed" in msg or "circuit open" in msg:
+                    result = self._local_deterministic_grade(context, expected_answer, generated_answer)
+                else:
+                    raise
 
         # Extract multi-metric scores and dynamically evaluate pass/fail
         faithfulness = result.get("faithfulness", 0.0)
@@ -191,24 +216,31 @@ class GeminiJudge:
                 return cached
 
         # Fallback to local rule-based grading if API key is not set
-        if hasattr(self.provider, "api_key") and not self.provider.api_key:
+        if self._is_local_fallback_required():
             result = self._local_deterministic_retrieval_grade(q, retrieved_contexts, gt)
         else:
-            prompt = RETRIEVAL_JUDGE_PROMPT_TEMPLATE.format(
-                query=q,
-                ground_truth=gt,
-                retrieved_contexts=formatted_contexts
-            )
-            text_response = await self.provider.generate(prompt)
-            cleaned_response = text_response.strip()
-            if cleaned_response.startswith("```"):
-                lines = cleaned_response.splitlines()
-                if lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines and lines[-1].startswith("```"):
-                    lines = lines[:-1]
-                cleaned_response = "\n".join(lines).strip()
-            result = json.loads(cleaned_response)
+            try:
+                prompt = RETRIEVAL_JUDGE_PROMPT_TEMPLATE.format(
+                    query=q,
+                    ground_truth=gt,
+                    retrieved_contexts=formatted_contexts
+                )
+                text_response = await self.provider.generate(prompt)
+                cleaned_response = text_response.strip()
+                if cleaned_response.startswith("```"):
+                    lines = cleaned_response.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    cleaned_response = "\n".join(lines).strip()
+                result = json.loads(cleaned_response)
+            except Exception as e:
+                msg = str(e).lower()
+                if "api key is required" in msg or "unauthorized" in msg or "401" in msg or "403" in msg or "all providers in fallback chain failed" in msg or "circuit open" in msg:
+                    result = self._local_deterministic_retrieval_grade(q, retrieved_contexts, gt)
+                else:
+                    raise
 
         # Cache results if caching is enabled
         if self.cache and hasattr(self.cache, "_compute_hash"):
