@@ -1,10 +1,6 @@
-import contextvars
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
-
-# Thread-safe & coroutine-safe context variable to store precise successful provider execution time (in seconds)
-generation_latency = contextvars.ContextVar("generation_latency", default=0.0)
 
 @dataclass
 class ProviderResponse:

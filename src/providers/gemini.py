@@ -32,7 +32,11 @@ class GeminiProvider(LLMProvider):
         if not self.api_key:
             raise ProviderAPIError("Gemini API key is required but not set.")
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        headers = {
+            "x-goog-api-key": self.api_key,
+            "Content-Type": "application/json"
+        }
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
@@ -47,7 +51,7 @@ class GeminiProvider(LLMProvider):
         for attempt in range(max_retries):
             start_time = time.perf_counter()
             try:
-                response = await client.post(url, json=payload, timeout=self.timeout)
+                response = await client.post(url, json=payload, headers=headers, timeout=self.timeout)
                 response.raise_for_status()
                 data = response.json()
                 latency_ms = (time.perf_counter() - start_time) * 1000

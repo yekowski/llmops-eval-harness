@@ -1,4 +1,3 @@
-import os
 import json
 from typing import Optional, List
 from src.evaluation.prompts.judge_templates import JUDGE_PROMPT_TEMPLATE, RETRIEVAL_JUDGE_PROMPT_TEMPLATE
@@ -6,7 +5,6 @@ from src.utils.cache import EvalCache
 from src.utils.helpers import strip_markdown_json, resolve_error_status_code
 from src.providers.base import LLMProvider, ProviderResponse
 from src.providers.gemini import GeminiProvider
-from src.providers.deepseek import DeepSeekProvider
 
 class LLMJudge:
     def __init__(

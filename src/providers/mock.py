@@ -1,9 +1,8 @@
-from src.providers.base import LLMProvider, ProviderResponse, generation_latency
+from src.providers.base import LLMProvider, ProviderResponse
 
 class MockProvider(LLMProvider):
     async def generate(self, prompt: str, **kwargs) -> ProviderResponse:
         """Instantly returns a mocked correct response string with scorecard metrics."""
-        generation_latency.set(0.001)
         if "context_precision" in prompt or "retrieved_contexts" in prompt:
             text = (
                 '{"context_precision": 0.9, "context_precision_reasoning": "Mocked retrieval test response", '
