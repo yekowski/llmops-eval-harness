@@ -16,7 +16,7 @@ class AnthropicProvider(LLMProvider):
         self.model = model
         self.system = system
         self.timeout = timeout
-        self._client = client
+        self._client = client or httpx.AsyncClient(timeout=self.timeout)
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:

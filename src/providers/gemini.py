@@ -14,7 +14,7 @@ class GeminiProvider(LLMProvider):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         self.model = model
         self.timeout = timeout
-        self._client = client
+        self._client = client or httpx.AsyncClient(timeout=self.timeout)
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:

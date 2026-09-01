@@ -24,7 +24,7 @@ class OpenAICompatibleProvider(LLMProvider):
         self.temperature = temperature
         # Local models (CPU inference) need much longer timeouts than cloud APIs
         self.timeout = timeout or (120.0 if self._is_local else 10.0)
-        self._client = client
+        self._client = client or httpx.AsyncClient(timeout=self.timeout)
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
