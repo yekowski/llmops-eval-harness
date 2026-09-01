@@ -10,6 +10,7 @@ from src.providers.mock import MockProvider
 from src.providers.ollama import OllamaProvider
 from src.providers.vllm import VLLMProvider
 from src.providers.router import ProviderRouter
+from src.providers.registry import PROVIDER_REGISTRY, build_provider, build_provider_from_config
 
 __all__ = [
     "LLMProvider",
@@ -25,5 +26,8 @@ __all__ = [
     "MockProvider",
     "OllamaProvider",
     "VLLMProvider",
-    "ProviderRouter"
+    "ProviderRouter",
+    "PROVIDER_REGISTRY",
+    "build_provider",
+    "build_provider_from_config"
 ]
