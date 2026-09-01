@@ -2,7 +2,7 @@ import os
 import json
 import uuid
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 class ExperimentTracker:
@@ -33,7 +33,7 @@ class ExperimentTracker:
             os.makedirs(self.runs_dir, exist_ok=True)
 
         run_id = str(uuid.uuid4())
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         git_commit = self._get_git_commit()
         
         record = {
