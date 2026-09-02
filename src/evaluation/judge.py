@@ -13,11 +13,13 @@ class LLMJudge:
         provider: Optional[LLMProvider] = None,
         api_key: Optional[str] = None,
         model: str = "gemini-3.5-flash",
-        cache: Optional[EvalCache] = None
+        cache: Optional[EvalCache] = None,
+        sla_thresholds: Optional[dict] = None
     ):
         self.cache = cache
         self.total_cost = 0.0
         self.provider = provider or GeminiProvider(api_key=api_key, model=model)
+        self.sla_thresholds = sla_thresholds or {}
 
     def get_cached_evaluation(self, query: str, context: str, generated_answer: str) -> Optional[dict]:
         """Check cache for evaluation result."""
@@ -109,7 +111,11 @@ class LLMJudge:
         faithfulness = result.get("faithfulness", 0.0)
         relevance = result.get("answer_relevance", 0.0)
         correctness = result.get("correctness", 0.0)
-        result["passed"] = (faithfulness >= 0.8 and relevance >= 0.8 and correctness >= 0.8)
+
+        min_faith = self.sla_thresholds.get("min_faithfulness", self.sla_thresholds.get("faithfulness", 0.8))
+        min_rel = self.sla_thresholds.get("min_relevance", self.sla_thresholds.get("relevance", 0.8))
+        min_corr = self.sla_thresholds.get("min_correctness", self.sla_thresholds.get("correctness", 0.8))
+        result["passed"] = (faithfulness >= min_faith and relevance >= min_rel and correctness >= min_corr)
 
         if input_tokens == 0:
             input_tokens = max(1, len(prompt) // 4)

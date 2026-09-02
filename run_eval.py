@@ -88,7 +88,8 @@ async def initialize_harness(config: dict) -> Tuple[SystemUnderTest, LLMJudge, A
     judge_providers_cfg = judge_cfg.get("providers", {})
     judge_provider = build_provider_from_config(judge_fallback_chain, judge_providers_cfg)
 
-    judge = LLMJudge(provider=judge_provider, cache=cache)
+    judge_sla_thresholds = config.get("sla_thresholds") or config.get("slas", {}).get("metrics", {})
+    judge = LLMJudge(provider=judge_provider, cache=cache, sla_thresholds=judge_sla_thresholds)
 
     # 3. Pre-warm router circuits
     if sut_provider and hasattr(sut_provider, "warmup"):
