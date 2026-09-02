@@ -103,7 +103,7 @@ class LLMJudge:
             except Exception as e:
                 status_code = resolve_error_status_code(e)
                 msg = str(e).lower()
-                if status_code in [401, 403, 500] or "api key is required" in msg or "circuit open" in msg or "all providers in fallback chain failed" in msg:
+                if status_code in [401, 403, 429, 500] or "rate limit" in msg or "api key is required" in msg or "circuit open" in msg or "all providers in fallback chain failed" in msg:
                     result = self._local_deterministic_grade(context, expected_answer, generated_answer)
                 else:
                     raise
@@ -213,7 +213,7 @@ class LLMJudge:
             except Exception as e:
                 status_code = resolve_error_status_code(e)
                 msg = str(e).lower()
-                if status_code in [401, 403, 500] or "api key is required" in msg or "circuit open" in msg or "all providers in fallback chain failed" in msg:
+                if status_code in [401, 403, 429, 500] or "rate limit" in msg or "api key is required" in msg or "circuit open" in msg or "all providers in fallback chain failed" in msg:
                     result = self._local_deterministic_retrieval_grade(q, retrieved_contexts, gt)
                 else:
                     raise
