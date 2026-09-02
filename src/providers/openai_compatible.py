@@ -28,6 +28,7 @@ class OpenAICompatibleProvider(LLMProvider):
         # Local models (CPU inference) need much longer timeouts than cloud APIs
         self.timeout = timeout or (120.0 if self._is_local else 10.0)
         self._client = client or httpx.AsyncClient(timeout=self.timeout)
+        self.execution_mode = "local" if self._is_local else "remote"
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -83,7 +84,10 @@ class OpenAICompatibleProvider(LLMProvider):
                     text=text,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
-                    latency_ms=latency_ms
+                    latency_ms=latency_ms,
+                    provider_name=self.__class__.__name__,
+                    model_name=self.model,
+                    execution_mode="local" if self._is_local else "remote"
                 )
             except httpx.HTTPStatusError as e:
                 status_code = e.response.status_code

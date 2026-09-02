@@ -1,14 +1,19 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from src.runners.async_runner import run_evaluation
-from src.schemas.models import DatasetEntry, EvaluationResult
+from src.schemas.models import DatasetEntry, EvaluationResult, SUTExecutionResult
 from src.clients.base import SystemUnderTest
 from src.evaluation.judge import LLMJudge
 
 @pytest.mark.asyncio
 async def test_run_evaluation_with_judge():
     mock_sut = MagicMock(spec=SystemUnderTest)
-    mock_sut.execute = AsyncMock(return_value="Answer from SUT")
+    mock_sut.execute_detailed = AsyncMock(return_value=SUTExecutionResult(
+        text="Answer from SUT",
+        prompt_tokens=15,
+        completion_tokens=20,
+        latency_ms=100.0
+    ))
 
     mock_judge = MagicMock(spec=LLMJudge)
     mock_judge.cache = None
@@ -17,12 +22,18 @@ async def test_run_evaluation_with_judge():
         "faithfulness": 0.95,
         "answer_relevance": 0.90,
         "correctness": 0.92,
-        "judge_mode": "llm"
+        "judge_mode": "llm",
+        "judge_prompt_tokens": 100,
+        "judge_completion_tokens": 50,
+        "judge_cost": 0.0001
     })
     mock_judge.evaluate_retrieval = AsyncMock(return_value={
         "context_precision": 0.90,
         "context_recall": 0.85,
-        "judge_mode": "llm"
+        "judge_mode": "llm",
+        "judge_prompt_tokens": 80,
+        "judge_completion_tokens": 40,
+        "judge_cost": 0.00008
     })
 
     entries = [
@@ -36,7 +47,7 @@ async def test_run_evaluation_with_judge():
         for i in range(5)
     ]
 
-    results = await run_evaluation(entries, mock_sut, mock_judge)
+    results = await run_evaluation(entries, mock_sut, mock_judge, concurrency_config={"max_workers": 2, "requests_per_second": 10.0})
 
     assert len(results) == 5
     for r in results:
@@ -47,12 +58,22 @@ async def test_run_evaluation_with_judge():
         assert r.correctness == 0.92
         assert r.context_precision == 0.90
         assert r.context_recall == 0.85
-        assert r.latency > 0.0
+        assert r.sut_prompt_tokens == 15
+        assert r.sut_completion_tokens == 20
+        assert r.judge_prompt_tokens == 180  # 100 + 80
+        assert r.judge_completion_tokens == 90  # 50 + 40
+        assert r.judge_mode == "llm"
+        assert r.retrieval_judge_mode == "llm"
 
 @pytest.mark.asyncio
 async def test_run_evaluation_without_judge():
     mock_sut = MagicMock(spec=SystemUnderTest)
-    mock_sut.execute = AsyncMock(return_value="Direct answer")
+    mock_sut.execute_detailed = AsyncMock(return_value=SUTExecutionResult(
+        text="Direct answer",
+        prompt_tokens=5,
+        completion_tokens=5,
+        latency_ms=50.0
+    ))
 
     entries = [
         DatasetEntry(query="Q1", expected_context="C1", expected_answer="A1"),
@@ -69,7 +90,7 @@ async def test_run_evaluation_without_judge():
 @pytest.mark.asyncio
 async def test_run_evaluation_sut_error_handling():
     mock_sut = MagicMock(spec=SystemUnderTest)
-    mock_sut.execute = AsyncMock(side_effect=RuntimeError("SUT connection failed"))
+    mock_sut.execute_detailed = AsyncMock(side_effect=RuntimeError("SUT connection failed"))
 
     entries = [
         DatasetEntry(query="Failed Query", expected_context="C", expected_answer="A")

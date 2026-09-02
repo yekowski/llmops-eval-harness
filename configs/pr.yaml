@@ -1,6 +1,13 @@
 # SLA Threshold Configuration for PR Validation
 dataset_path: "data/adversarial_eval.json"
 
+# Strict CI Safety: Fail if judge calls fail or fall back to heuristic grading
+judge_failure_policy: "fail"
+
+concurrency:
+  max_workers: 5
+  requests_per_second: 1.0
+
 sla_thresholds:
   min_faithfulness: 0.85
   min_relevance: 0.80
@@ -30,4 +37,3 @@ judge:
   providers:
     gemini:
       model: "gemini-3.5-flash"
-

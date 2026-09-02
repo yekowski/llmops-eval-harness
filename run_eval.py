@@ -5,11 +5,12 @@ import os
 import sys
 import json
 import yaml
+import logging
 import argparse
 import asyncio
 from typing import List, Dict, Tuple, Any, Optional
 
-from src.schemas.models import DatasetEntry, EvaluationResult
+from src.schemas.models import DatasetEntry, EvaluationResult, HarnessConfig
 from src.clients.base import SystemUnderTest
 from src.clients.mock_client import MockRAGClient
 from src.clients.sut import LLMProviderSUT
@@ -21,6 +22,8 @@ from src.reporters.markdown import generate_markdown_report
 from src.reporters.github import write_to_step_summary
 from src.utils.tracker import ExperimentTracker, print_history_table
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
 
 def load_and_validate_config(config_path: str, dataset_path_override: Optional[str] = None) -> Tuple[dict, List[DatasetEntry], str]:
     """Loads SLA configuration and dataset file, validating existence and parsing DatasetEntry objects."""
@@ -29,13 +32,21 @@ def load_and_validate_config(config_path: str, dataset_path_override: Optional[s
         sys.exit(1)
 
     with open(config_path, "r") as f:
-        config = yaml.safe_load(f) or {}
+        raw_config = yaml.safe_load(f) or {}
+
+    # Validate configuration structure using strict Pydantic model
+    try:
+        validated_config = HarnessConfig.model_validate(raw_config)
+        config = validated_config.model_dump()
+    except Exception as e:
+        print(f"Error: Configuration validation failed for {config_path}: {e}")
+        sys.exit(1)
 
     default_dataset = "datasets/benchmarks/human_labeled.json"
-    if dataset_path_override and (dataset_path_override != default_dataset or "dataset_path" not in config):
+    if dataset_path_override:
         dataset_path = dataset_path_override
     else:
-        dataset_path = config.get("dataset_path", dataset_path_override or default_dataset)
+        dataset_path = config.get("dataset_path") or default_dataset
 
     if not os.path.exists(dataset_path):
         print(f"Error: Dataset not found at {dataset_path}")
@@ -100,16 +111,24 @@ async def initialize_harness(config: dict) -> Tuple[SystemUnderTest, LLMJudge, A
     return sut, judge, sut_provider, judge_provider
 
 
-async def evaluate_dataset(entries: List[DatasetEntry], sut: SystemUnderTest, judge: LLMJudge) -> Tuple[List[EvaluationResult], dict]:
+async def evaluate_dataset(
+    entries: List[DatasetEntry],
+    sut: SystemUnderTest,
+    judge: LLMJudge,
+    concurrency_config: Optional[dict] = None
+) -> Tuple[List[EvaluationResult], dict]:
     """Runs concurrent evaluation queries against SUT and aggregates score metrics."""
     print(f"Running evaluation of {len(entries)} entries concurrently against SUT...")
-    results = await run_evaluation(entries, sut, judge)
+    results = await run_evaluation(entries, sut, judge, concurrency_config=concurrency_config)
 
     total_count = len(results)
     passed_count = sum(1 for r in results if r.passed)
     pass_rate_pct = (passed_count / total_count) * 100 if total_count > 0 else 0.0
     avg_latency_ms = (sum(r.latency for r in results) / total_count) * 1000 if total_count > 0 else 0.0
-    total_cost_usd = judge.total_cost
+
+    sut_cost_usd = sum(r.sut_cost for r in results)
+    judge_cost_usd = judge.total_cost
+    total_cost_usd = sut_cost_usd + judge_cost_usd
 
     avg_faithfulness = sum(r.faithfulness for r in results) / total_count if total_count > 0 else 0.0
     avg_relevance = sum(r.answer_relevance for r in results) / total_count if total_count > 0 else 0.0
@@ -120,9 +139,15 @@ async def evaluate_dataset(entries: List[DatasetEntry], sut: SystemUnderTest, ju
     avg_context_precision = (sum(precisions) / len(precisions)) if precisions else None
     avg_context_recall = (sum(recalls) / len(recalls)) if recalls else None
 
+    fallback_generation_count = sum(1 for r in results if r.judge_mode in ["fallback", "mock"])
+    fallback_retrieval_count = sum(1 for r in results if r.retrieval_judge_mode in ["fallback", "mock"])
+    has_fallback = (fallback_generation_count > 0) or (fallback_retrieval_count > 0)
+
     metrics = {
         "pass_rate_pct": pass_rate_pct,
         "avg_latency_ms": avg_latency_ms,
+        "sut_cost_usd": sut_cost_usd,
+        "judge_cost_usd": judge_cost_usd,
         "total_cost_usd": total_cost_usd,
         "passed_count": passed_count,
         "total_count": total_count,
@@ -131,6 +156,9 @@ async def evaluate_dataset(entries: List[DatasetEntry], sut: SystemUnderTest, ju
         "avg_correctness": avg_correctness,
         "avg_context_precision": avg_context_precision,
         "avg_context_recall": avg_context_recall,
+        "fallback_generation_count": fallback_generation_count,
+        "fallback_retrieval_count": fallback_retrieval_count,
+        "has_fallback": has_fallback,
     }
     return results, metrics
 
@@ -170,7 +198,7 @@ def _compute_deltas(metrics: dict, baseline: dict) -> dict:
     return deltas
 
 
-def _evaluate_sla_gates(metrics: dict, thresholds: dict) -> List[str]:
+def _evaluate_sla_gates(metrics: dict, thresholds: dict, judge_failure_policy: str = "fail") -> List[str]:
     """Pure function evaluating absolute and regression SLA gates, returning failure reasons if any."""
     min_pass_rate = thresholds.get("min_pass_rate", 0.0)
     min_faithfulness = thresholds.get("min_faithfulness", 0.0)
@@ -195,6 +223,21 @@ def _evaluate_sla_gates(metrics: dict, thresholds: dict) -> List[str]:
     avg_latency_ms = metrics.get("avg_latency_ms", 0.0)
     total_cost_usd = metrics.get("total_cost_usd", 0.0)
 
+    # 1. Fallback Policy Check (P0 Safety: Never allow fallback grading to produce a credible CI pass)
+    if metrics.get("has_fallback", False):
+        gen_fb = metrics.get("fallback_generation_count", 0)
+        ret_fb = metrics.get("fallback_retrieval_count", 0)
+        msg = f"Evaluation relied on fallback grading ({gen_fb} gen, {ret_fb} retrieval fallbacks)."
+
+        if judge_failure_policy == "fail":
+            failures.append(
+                f"Judge failure policy is 'fail' and {msg} Run is inconclusive / blocked in strict CI mode."
+            )
+        elif judge_failure_policy == "warn":
+            logging.warning(f"[JUDGE POLICY WARN] {msg} Run allowed with warning.")
+            metrics["judge_failure_policy_warning"] = True
+
+    # 2. Metric SLA checks
     if pass_rate_ratio < min_pass_rate:
         failures.append(f"pass_rate {pass_rate_ratio:.2f} < required {min_pass_rate:.2f}")
     if avg_faithfulness < min_faithfulness:
@@ -214,7 +257,7 @@ def _evaluate_sla_gates(metrics: dict, thresholds: dict) -> List[str]:
     if total_cost_usd > max_cost:
         failures.append(f"cost {total_cost_usd:.6f} > required {max_cost:.4f}")
 
-    # Baseline regression checks
+    # 3. Baseline regression checks
     delta_faith = metrics.get("delta_faithfulness")
     if delta_faith is not None and delta_faith < -max_score_drop:
         failures.append(f"Faithfulness dropped by {abs(delta_faith):.2f} > allowed {max_score_drop:.2f} limit")
@@ -237,7 +280,9 @@ def enforce_slas_and_report(
     dataset_path: str,
     sut_provider: Any,
     judge: LLMJudge,
-    baseline_path: str = "baseline.json"
+    baseline_path: str = "baseline.json",
+    update_baseline: bool = False,
+    judge_failure_policy: str = "fail"
 ) -> bool:
     """Computes deltas against baseline, enforces SLA gates, outputs markdown reports, and logs experiment history."""
     baseline = {}
@@ -251,7 +296,7 @@ def enforce_slas_and_report(
     deltas = _compute_deltas(metrics, baseline)
     metrics.update(deltas)
 
-    failures = _evaluate_sla_gates(metrics, sla_thresholds)
+    failures = _evaluate_sla_gates(metrics, sla_thresholds, judge_failure_policy=judge_failure_policy)
     sla_passed = len(failures) == 0
     metrics["sla_passed"] = sla_passed
 
@@ -303,24 +348,28 @@ def enforce_slas_and_report(
             print(f"Reason: {failure}")
         return False
     else:
-        new_baseline = {
-            "pass_rate_pct": metrics["pass_rate_pct"],
-            "avg_latency_ms": metrics["avg_latency_ms"],
-            "total_cost_usd": metrics["total_cost_usd"],
-            "faithfulness": metrics["avg_faithfulness"],
-            "answer_relevance": metrics["avg_relevance"],
-            "correctness": metrics["avg_correctness"]
-        }
-        if metrics.get("avg_context_precision") is not None:
-            new_baseline["context_precision"] = metrics["avg_context_precision"]
-        if metrics.get("avg_context_recall") is not None:
-            new_baseline["context_recall"] = metrics["avg_context_recall"]
-        try:
-            with open(baseline_path, "w") as f:
-                json.dump(new_baseline, f, indent=2)
-            print(f"Saved new baseline scores to {baseline_path}")
-        except Exception as e:
-            print(f"[WARNING] Could not save {baseline_path}: {e}")
+        if update_baseline:
+            if metrics.get("has_fallback", False):
+                print("⚠️ Cannot update baseline: Run relied on fallback evaluation modes.")
+            else:
+                new_baseline = {
+                    "pass_rate_pct": metrics["pass_rate_pct"],
+                    "avg_latency_ms": metrics["avg_latency_ms"],
+                    "total_cost_usd": metrics["total_cost_usd"],
+                    "faithfulness": metrics["avg_faithfulness"],
+                    "answer_relevance": metrics["avg_relevance"],
+                    "correctness": metrics["avg_correctness"]
+                }
+                if metrics.get("avg_context_precision") is not None:
+                    new_baseline["context_precision"] = metrics["avg_context_precision"]
+                if metrics.get("avg_context_recall") is not None:
+                    new_baseline["context_recall"] = metrics["avg_context_recall"]
+                try:
+                    with open(baseline_path, "w") as f:
+                        json.dump(new_baseline, f, indent=2)
+                    print(f"Saved new baseline scores to {baseline_path}")
+                except Exception as e:
+                    print(f"[WARNING] Could not save {baseline_path}: {e}")
 
         print("✅ SLA check PASSED! Ready for integration.")
         return True
@@ -337,14 +386,20 @@ async def main_async():
     parser.add_argument(
         "--dataset",
         type=str,
-        default="datasets/benchmarks/human_labeled.json",
-        help="Path to the evaluation dataset JSON file"
+        default=None,
+        help="Optional path override for evaluation dataset JSON file (defaults to dataset_path in config)"
     )
     parser.add_argument(
         "--baseline",
         type=str,
         default="baseline.json",
         help="Path to baseline metrics JSON file for regression checks (default: baseline.json)"
+    )
+    parser.add_argument(
+        "--update-baseline",
+        action="store_true",
+        default=False,
+        help="Explicitly update baseline.json with results if all SLAs pass and no fallback was used"
     )
     parser.add_argument(
         "--history",
@@ -362,9 +417,17 @@ async def main_async():
 
     config, entries, dataset_path = load_and_validate_config(args.config, args.dataset)
     sut, judge, sut_provider, judge_provider = await initialize_harness(config)
-    
+
+    judge_failure_policy = config.get("judge_failure_policy", "fail")
+    concurrency_config = config.get("concurrency", {})
+
     try:
-        results, metrics = await evaluate_dataset(entries, sut, judge)
+        results, metrics = await evaluate_dataset(
+            entries,
+            sut,
+            judge,
+            concurrency_config=concurrency_config
+        )
         sla_passed = enforce_slas_and_report(
             metrics=metrics,
             sla_thresholds=config.get("sla_thresholds", {}),
@@ -372,7 +435,9 @@ async def main_async():
             dataset_path=dataset_path,
             sut_provider=sut_provider,
             judge=judge,
-            baseline_path=args.baseline
+            baseline_path=args.baseline,
+            update_baseline=args.update_baseline,
+            judge_failure_policy=judge_failure_policy
         )
     finally:
         if sut_provider and hasattr(sut_provider, "close"):

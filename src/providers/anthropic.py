@@ -20,6 +20,7 @@ class AnthropicProvider(LLMProvider):
         self.system = system
         self.timeout = timeout
         self._client = client or httpx.AsyncClient(timeout=self.timeout)
+        self.execution_mode = "remote"
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -74,7 +75,10 @@ class AnthropicProvider(LLMProvider):
                     text=text,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
-                    latency_ms=latency_ms
+                    latency_ms=latency_ms,
+                    provider_name="AnthropicProvider",
+                    model_name=self.model,
+                    execution_mode="remote"
                 )
             except httpx.HTTPStatusError as e:
                 status_code = e.response.status_code

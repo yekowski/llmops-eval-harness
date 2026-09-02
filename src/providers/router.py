@@ -54,6 +54,8 @@ class ProviderRouter(LLMProvider):
                 pass
 
     async def generate(self, prompt: str, **kwargs) -> ProviderResponse:
+        overall_start_time = time.perf_counter()
+
         for i, provider in enumerate(self.providers):
             provider_name = provider.__class__.__name__
 
@@ -67,11 +69,20 @@ class ProviderRouter(LLMProvider):
 
             self.active_provider = provider
             try:
-                start_time = time.perf_counter()
                 res = await provider.generate(prompt, **kwargs)
-                latency_ms = (time.perf_counter() - start_time) * 1000
+                total_latency_ms = (time.perf_counter() - overall_start_time) * 1000.0
+
                 if not isinstance(res, ProviderResponse):
-                    res = ProviderResponse(text=str(res), latency_ms=latency_ms)
+                    res = ProviderResponse(text=str(res))
+
+                res.latency_ms = total_latency_ms
+                if not res.provider_name:
+                    res.provider_name = provider_name
+                if not res.model_name:
+                    res.model_name = getattr(provider, "model", "default")
+                if not hasattr(res, "execution_mode") or res.execution_mode is None:
+                    res.execution_mode = getattr(provider, "execution_mode", "remote")
+
                 return res
             except (ProviderRateLimitError, ProviderAPIError) as e:
                 status_code = resolve_error_status_code(e)

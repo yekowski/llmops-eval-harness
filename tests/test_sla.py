@@ -1,6 +1,8 @@
 import json
 import pytest
+from pydantic import ValidationError
 from run_eval import enforce_slas_and_report, _compute_deltas, _evaluate_sla_gates
+from src.schemas.models import HarnessConfig, ConcurrencyConfig
 from src.evaluation.judge import LLMJudge
 from src.providers.mock import MockProvider
 
@@ -9,6 +11,8 @@ def sample_metrics():
     return {
         "pass_rate_pct": 100.0,
         "avg_latency_ms": 1500.0,
+        "sut_cost_usd": 0.0005,
+        "judge_cost_usd": 0.0005,
         "total_cost_usd": 0.001,
         "passed_count": 5,
         "total_count": 5,
@@ -16,7 +20,10 @@ def sample_metrics():
         "avg_relevance": 0.90,
         "avg_correctness": 0.92,
         "avg_context_precision": 0.88,
-        "avg_context_recall": 0.85
+        "avg_context_recall": 0.85,
+        "has_fallback": False,
+        "fallback_generation_count": 0,
+        "fallback_retrieval_count": 0
     }
 
 @pytest.fixture
@@ -43,13 +50,15 @@ def test_sla_pass_case(tmp_path, monkeypatch, sample_metrics, default_thresholds
         config_path="configs/test.yaml",
         dataset_path="datasets/test.json",
         sut_provider=MockProvider(),
-        judge=judge
+        judge=judge,
+        judge_failure_policy="fail"
     )
     assert passed is True
 
-def test_sla_failure_faithfulness(tmp_path, monkeypatch, sample_metrics, default_thresholds):
+def test_sla_failure_fallback_strict_ci(tmp_path, monkeypatch, sample_metrics, default_thresholds):
     monkeypatch.chdir(tmp_path)
-    sample_metrics["avg_faithfulness"] = 0.50  # Below required 0.85
+    sample_metrics["has_fallback"] = True
+    sample_metrics["fallback_generation_count"] = 1
     judge = LLMJudge(provider=MockProvider())
 
     passed = enforce_slas_and_report(
@@ -58,13 +67,90 @@ def test_sla_failure_faithfulness(tmp_path, monkeypatch, sample_metrics, default
         config_path="configs/test.yaml",
         dataset_path="datasets/test.json",
         sut_provider=MockProvider(),
-        judge=judge
+        judge=judge,
+        judge_failure_policy="fail"
+    )
+    assert passed is False
+
+def test_sla_warn_policy_fallback(tmp_path, monkeypatch, sample_metrics, default_thresholds):
+    """Verifies that judge_failure_policy='warn' permits fallback runs while setting warning metadata."""
+    monkeypatch.chdir(tmp_path)
+    sample_metrics["has_fallback"] = True
+    sample_metrics["fallback_generation_count"] = 1
+    judge = LLMJudge(provider=MockProvider())
+
+    passed = enforce_slas_and_report(
+        metrics=sample_metrics,
+        sla_thresholds=default_thresholds,
+        config_path="configs/test.yaml",
+        dataset_path="datasets/test.json",
+        sut_provider=MockProvider(),
+        judge=judge,
+        judge_failure_policy="warn"
+    )
+    assert passed is True
+    assert sample_metrics.get("judge_failure_policy_warning") is True
+
+def test_sla_allow_fallback_dev_mode(tmp_path, monkeypatch, sample_metrics, default_thresholds):
+    monkeypatch.chdir(tmp_path)
+    sample_metrics["has_fallback"] = True
+    sample_metrics["fallback_generation_count"] = 1
+    judge = LLMJudge(provider=MockProvider())
+
+    passed = enforce_slas_and_report(
+        metrics=sample_metrics,
+        sla_thresholds=default_thresholds,
+        config_path="configs/test.yaml",
+        dataset_path="datasets/test.json",
+        sut_provider=MockProvider(),
+        judge=judge,
+        judge_failure_policy="allow"
+    )
+    assert passed is True
+
+def test_config_validation_strict_extra_forbid():
+    """HarnessConfig must forbid unknown arbitrary top-level keys."""
+    valid_cfg = {"judge_failure_policy": "fail", "concurrency": {"max_workers": 4, "requests_per_second": 2.0}}
+    HarnessConfig.model_validate(valid_cfg)
+
+    invalid_cfg = {"judge_failure_policy": "fail", "unknown_rogue_key": 123}
+    with pytest.raises(ValidationError):
+        HarnessConfig.model_validate(invalid_cfg)
+
+def test_config_validation_concurrency_bounds():
+    """Concurrency max_workers must be >= 1, requests_per_second > 0."""
+    with pytest.raises(ValidationError):
+        ConcurrencyConfig(max_workers=0)
+
+    with pytest.raises(ValidationError):
+        ConcurrencyConfig(requests_per_second=0.0)
+
+    with pytest.raises(ValidationError):
+        ConcurrencyConfig(requests_per_second=-1.5)
+
+def test_config_validation_invalid_judge_policy():
+    with pytest.raises(ValidationError):
+        HarnessConfig(judge_failure_policy="invalid_mode")
+
+def test_sla_failure_faithfulness(tmp_path, monkeypatch, sample_metrics, default_thresholds):
+    monkeypatch.chdir(tmp_path)
+    sample_metrics["avg_faithfulness"] = 0.50
+    judge = LLMJudge(provider=MockProvider())
+
+    passed = enforce_slas_and_report(
+        metrics=sample_metrics,
+        sla_thresholds=default_thresholds,
+        config_path="configs/test.yaml",
+        dataset_path="datasets/test.json",
+        sut_provider=MockProvider(),
+        judge=judge,
+        judge_failure_policy="fail"
     )
     assert passed is False
 
 def test_sla_failure_latency(tmp_path, monkeypatch, sample_metrics, default_thresholds):
     monkeypatch.chdir(tmp_path)
-    sample_metrics["avg_latency_ms"] = 5000.0  # Exceeds max 3000.0 ms
+    sample_metrics["avg_latency_ms"] = 5000.0
     judge = LLMJudge(provider=MockProvider())
 
     passed = enforce_slas_and_report(
@@ -73,13 +159,13 @@ def test_sla_failure_latency(tmp_path, monkeypatch, sample_metrics, default_thre
         config_path="configs/test.yaml",
         dataset_path="datasets/test.json",
         sut_provider=MockProvider(),
-        judge=judge
+        judge=judge,
+        judge_failure_policy="fail"
     )
     assert passed is False
 
 def test_sla_score_regression_drop(tmp_path, monkeypatch, sample_metrics, default_thresholds):
     monkeypatch.chdir(tmp_path)
-    # Create baseline file with high historical faithfulness score
     baseline_data = {
         "pass_rate_pct": 100.0,
         "avg_latency_ms": 1000.0,
@@ -91,7 +177,6 @@ def test_sla_score_regression_drop(tmp_path, monkeypatch, sample_metrics, defaul
     with open("baseline.json", "w") as f:
         json.dump(baseline_data, f)
 
-    # Current faithfulness is 0.90, which drops 0.09 from baseline 0.99 (exceeds max_score_drop 0.05 limit)
     sample_metrics["avg_faithfulness"] = 0.90
     judge = LLMJudge(provider=MockProvider())
 
@@ -101,7 +186,8 @@ def test_sla_score_regression_drop(tmp_path, monkeypatch, sample_metrics, defaul
         config_path="configs/test.yaml",
         dataset_path="datasets/test.json",
         sut_provider=MockProvider(),
-        judge=judge
+        judge=judge,
+        judge_failure_policy="fail"
     )
     assert passed is False
 
@@ -122,13 +208,10 @@ def test_compute_deltas_pure_function(sample_metrics):
     assert deltas["delta_faithfulness"] == pytest.approx(0.05)
 
 def test_evaluate_sla_gates_pure_function(sample_metrics, default_thresholds):
-    # Passing case
-    failures = _evaluate_sla_gates(sample_metrics, default_thresholds)
+    failures = _evaluate_sla_gates(sample_metrics, default_thresholds, judge_failure_policy="fail")
     assert len(failures) == 0
 
-    # Failing case
     sample_metrics["avg_faithfulness"] = 0.50
-    failures = _evaluate_sla_gates(sample_metrics, default_thresholds)
+    failures = _evaluate_sla_gates(sample_metrics, default_thresholds, judge_failure_policy="fail")
     assert len(failures) == 1
     assert "faithfulness" in failures[0]
-

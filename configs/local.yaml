@@ -1,6 +1,12 @@
 # Local Model Runtime Configuration for Offline Evaluation
 dataset_path: "data/adversarial_eval.json"
 
+judge_failure_policy: "allow"
+
+concurrency:
+  max_workers: 5
+  requests_per_second: 5.0
+
 sla_thresholds:
   min_faithfulness: 0.85
   min_relevance: 0.80
@@ -30,4 +36,3 @@ judge:
   providers:
     gemini:
       model: "gemini-3.5-flash"
-

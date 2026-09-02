@@ -1,7 +1,7 @@
 import os
 import json
 import asyncio
-from src.cache.prompt_hash import PromptHashCache
+from src.utils.cache import EvalCache
 from src.evaluation.judge import LLMJudge
 from src.evaluation.meta_eval import run_meta_evaluation
 
@@ -15,7 +15,7 @@ async def main():
         dataset = json.load(f)
 
     # Initialize cache and judge
-    cache = PromptHashCache()
+    cache = EvalCache()
     judge = LLMJudge(cache=cache)
 
     print(f"Starting meta-evaluation of LLM Judge against {len(dataset)} human-labeled samples...")
@@ -28,7 +28,7 @@ async def main():
     print(f" Total Samples          : {len(dataset)}")
     print(f" Agreement Rate         : {summary['accuracy']:.2%}")
     print(f" Cohen's Kappa          : {summary['cohens_kappa']:.4f}")
-    
+
     passed = summary['accuracy'] >= 0.85
     status_str = "PASSED" if passed else "FAILED (Below 85% Threshold)"
     print(f" Status                 : {status_str}")

@@ -18,6 +18,7 @@ class GeminiProvider(LLMProvider):
         self.model = model
         self.timeout = timeout
         self._client = client or httpx.AsyncClient(timeout=self.timeout)
+        self.execution_mode = "remote"
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -37,12 +38,16 @@ class GeminiProvider(LLMProvider):
             "x-goog-api-key": self.api_key,
             "Content-Type": "application/json"
         }
+
+        generation_config = {}
+        if kwargs.get("json_mode") or kwargs.get("response_format") == "json_object" or kwargs.get("response_format") == {"type": "json_object"}:
+            generation_config["responseMimeType"] = "application/json"
+
         payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "responseMimeType": "application/json"
-            }
+            "contents": [{"parts": [{"text": prompt}]}]
         }
+        if generation_config:
+            payload["generationConfig"] = generation_config
 
         client = self._get_client()
         max_retries = 2
@@ -65,7 +70,10 @@ class GeminiProvider(LLMProvider):
                     text=text,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
-                    latency_ms=latency_ms
+                    latency_ms=latency_ms,
+                    provider_name="GeminiProvider",
+                    model_name=self.model,
+                    execution_mode="remote"
                 )
             except httpx.HTTPStatusError as e:
                 status_code = e.response.status_code

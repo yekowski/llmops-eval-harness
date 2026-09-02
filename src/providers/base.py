@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Literal
+
+ExecutionMode = Literal["remote", "local", "mock"]
 
 @dataclass
 class ProviderResponse:
@@ -8,6 +10,9 @@ class ProviderResponse:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     latency_ms: float = 0.0
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    execution_mode: ExecutionMode = "remote"
 
     def __str__(self) -> str:
         return self.text
@@ -48,7 +53,7 @@ class LLMProvider(ABC):
             **kwargs: Extra parameters to pass to the API.
 
         Returns:
-            ProviderResponse containing text, token counts, and latency.
+            ProviderResponse containing text, token counts, latency, and execution metadata.
         """
         pass
 
