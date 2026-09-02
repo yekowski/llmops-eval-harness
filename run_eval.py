@@ -362,16 +362,29 @@ async def main_async():
 
     config, entries, dataset_path = load_and_validate_config(args.config, args.dataset)
     sut, judge, sut_provider, judge_provider = await initialize_harness(config)
-    results, metrics = await evaluate_dataset(entries, sut, judge)
-    sla_passed = enforce_slas_and_report(
-        metrics=metrics,
-        sla_thresholds=config.get("sla_thresholds", {}),
-        config_path=args.config,
-        dataset_path=dataset_path,
-        sut_provider=sut_provider,
-        judge=judge,
-        baseline_path=args.baseline
-    )
+    
+    try:
+        results, metrics = await evaluate_dataset(entries, sut, judge)
+        sla_passed = enforce_slas_and_report(
+            metrics=metrics,
+            sla_thresholds=config.get("sla_thresholds", {}),
+            config_path=args.config,
+            dataset_path=dataset_path,
+            sut_provider=sut_provider,
+            judge=judge,
+            baseline_path=args.baseline
+        )
+    finally:
+        if sut_provider and hasattr(sut_provider, "close"):
+            try:
+                await sut_provider.close()
+            except Exception:
+                pass
+        if judge and hasattr(judge, "close"):
+            try:
+                await judge.close()
+            except Exception:
+                pass
 
     sys.exit(0 if sla_passed else 1)
 

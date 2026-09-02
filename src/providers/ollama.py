@@ -16,3 +16,7 @@ class OllamaProvider(OpenAICompatibleProvider):
             api_key_env_var="OLLAMA_API_KEY",
             **kwargs
         )
+
+    @property
+    def health_check_url(self) -> Optional[str]:
+        return self.base_url.replace("/v1", "/api/tags")

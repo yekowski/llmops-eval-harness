@@ -30,17 +30,9 @@ class ProviderRouter(LLMProvider):
                 continue
 
             try:
-                # For local providers (Ollama/vLLM), use a lightweight HTTP health check
-                # using the provider's managed client instead of creating throwaway clients
-                is_local = getattr(provider, "_is_local", False)
-                if is_local:
-                    base_url = getattr(provider, "base_url", "")
-                    # Ollama health check: GET /api/tags (fast, no inference)
-                    if "11434" in base_url or "ollama" in provider_name.lower():
-                        health_url = base_url.replace("/v1", "/api/tags")
-                    else:
-                        health_url = base_url.rstrip("/")
-
+                # Use lightweight provider health check URL if defined
+                health_url = provider.health_check_url
+                if health_url:
                     client = provider._get_client() if hasattr(provider, "_get_client") else httpx.AsyncClient(timeout=5.0)
                     resp = await client.get(health_url, timeout=5.0)
                     resp.raise_for_status()
@@ -114,3 +106,12 @@ class ProviderRouter(LLMProvider):
     def model(self) -> str:
         """Exposes the active provider model dynamically to keep token cost tracking accurate."""
         return getattr(self.active_provider, "model", "mock")
+
+    async def close(self) -> None:
+        """Closes all underlying provider clients to prevent open connection leaks."""
+        for provider in self.providers:
+            if hasattr(provider, "close"):
+                try:
+                    await provider.close()
+                except Exception:
+                    pass

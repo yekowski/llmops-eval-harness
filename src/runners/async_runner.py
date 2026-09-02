@@ -1,5 +1,7 @@
-import asyncio
+import sys
 import time
+import asyncio
+import traceback
 from typing import List, Optional
 from src.schemas.models import DatasetEntry, EvaluationResult
 from src.clients.base import SystemUnderTest
@@ -14,10 +16,10 @@ async def run_evaluation(
     limit = 5 if judge else len(entries) + 1
     sem = asyncio.Semaphore(limit)
     rate_limit_lock = asyncio.Lock()
-    last_request_time = 0.0
+    next_available_time = 0.0
 
     async def evaluate_single(entry: DatasetEntry) -> EvaluationResult:
-        nonlocal last_request_time
+        nonlocal next_available_time
         async with sem:
             start_time = time.perf_counter()
             try:
@@ -33,12 +35,15 @@ async def run_evaluation(
                         judge_res = judge.get_cached_evaluation(entry.query, entry.expected_context, response)
 
                     if judge_res is None:
+                        # Non-blocking rate reservation: hold lock only to compute timestamp slot
                         async with rate_limit_lock:
                             now = time.perf_counter()
-                            elapsed = now - last_request_time
-                            if elapsed < 1.0:
-                                await asyncio.sleep(1.0 - elapsed)
-                            last_request_time = time.perf_counter()
+                            scheduled_time = max(now, next_available_time)
+                            next_available_time = scheduled_time + 1.0
+
+                        delay = scheduled_time - now
+                        if delay > 0:
+                            await asyncio.sleep(delay)
 
                         judge_start = time.perf_counter()
                         judge_res = await judge.evaluate(
@@ -84,8 +89,10 @@ async def run_evaluation(
                     context_recall=context_recall,
                     judge_latency=judge_latency
                 )
-            except Exception:
+            except Exception as e:
                 sut_latency = time.perf_counter() - start_time
+                print(f"[RUNNER ERROR] Error evaluating entry '{entry.query[:50]}...': {e}", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
                 return EvaluationResult(passed=False, latency=sut_latency, tokens=0)
 
     # Concurrently execute all evaluation tasks

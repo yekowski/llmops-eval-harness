@@ -25,6 +25,20 @@ class ProviderAPIError(Exception):
         self.status_code = status_code
 
 class LLMProvider(ABC):
+    @property
+    def model(self) -> str:
+        """Returns the identifier name of the active model."""
+        return getattr(self, "_model", "default")
+
+    @model.setter
+    def model(self, value: str) -> None:
+        self._model = value
+
+    @property
+    def health_check_url(self) -> Optional[str]:
+        """Optional HTTP URL for lightweight pre-warm health checks."""
+        return None
+
     @abstractmethod
     async def generate(self, prompt: str, **kwargs) -> ProviderResponse:
         """Asynchronously sends a generation request to the LLM model.
@@ -36,4 +50,8 @@ class LLMProvider(ABC):
         Returns:
             ProviderResponse containing text, token counts, and latency.
         """
+        pass
+
+    async def close(self) -> None:
+        """Closes any underlying HTTP connections or async client sessions."""
         pass

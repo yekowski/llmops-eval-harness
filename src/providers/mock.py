@@ -1,6 +1,13 @@
 from src.providers.base import LLMProvider, ProviderResponse
 
 class MockProvider(LLMProvider):
+    def __init__(self, model: str = "mock"):
+        self._model = model
+
+    @property
+    def model(self) -> str:
+        return self._model
+
     async def generate(self, prompt: str, **kwargs) -> ProviderResponse:
         """Instantly returns a mocked correct response string with scorecard metrics."""
         if "context_precision" in prompt or "retrieved_contexts" in prompt:

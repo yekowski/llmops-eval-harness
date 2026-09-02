@@ -47,12 +47,8 @@ class OpenAICompatibleProvider(LLMProvider):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
-        target_model = self.model
-        if "api.groq.com" in self.base_url and target_model in ["llama-3.3-70b-versatile", "llama3-8b-8192"]:
-            target_model = "groq/compound"
-
         payload = {
-            "model": target_model,
+            "model": self.model,
             "messages": [
                 {"role": "user", "content": prompt}
             ]
@@ -67,7 +63,7 @@ class OpenAICompatibleProvider(LLMProvider):
             payload["temperature"] = temp
 
         client = self._get_client()
-        max_retries = 3
+        max_retries = 2
         last_exception = None
 
         for attempt in range(max_retries):
@@ -93,7 +89,7 @@ class OpenAICompatibleProvider(LLMProvider):
                 status_code = e.response.status_code
                 last_exception = e
                 if status_code in [429, 500, 502, 503, 504] and attempt < max_retries - 1:
-                    backoff = (2 ** attempt) + random.uniform(0.1, 0.5)
+                    backoff = 0.2 * (2 ** attempt) + random.uniform(0.05, 0.15)
                     await asyncio.sleep(backoff)
                     continue
 
@@ -104,7 +100,7 @@ class OpenAICompatibleProvider(LLMProvider):
             except httpx.RequestError as e:
                 last_exception = e
                 if attempt < max_retries - 1:
-                    backoff = (2 ** attempt) + random.uniform(0.1, 0.5)
+                    backoff = 0.2 * (2 ** attempt) + random.uniform(0.05, 0.15)
                     await asyncio.sleep(backoff)
                     continue
                 raise ProviderAPIError(f"{self.__class__.__name__} request error: {str(e)}")

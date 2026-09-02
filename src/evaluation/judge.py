@@ -1,4 +1,6 @@
 import json
+import sys
+import asyncio
 from typing import Optional, List
 from src.evaluation.prompts.judge_templates import JUDGE_PROMPT_TEMPLATE, RETRIEVAL_JUDGE_PROMPT_TEMPLATE
 from src.utils.cache import EvalCache
@@ -18,25 +20,31 @@ class LLMJudge:
     ):
         self.cache = cache
         self.total_cost = 0.0
+        self._cost_lock = asyncio.Lock()
         self.provider = provider or GeminiProvider(api_key=api_key, model=model)
         self.sla_thresholds = sla_thresholds or {}
+
+    async def close(self) -> None:
+        """Closes underlying provider connections."""
+        if hasattr(self.provider, "close"):
+            try:
+                await self.provider.close()
+            except Exception:
+                pass
 
     def get_cached_evaluation(self, query: str, context: str, generated_answer: str) -> Optional[dict]:
         """Check cache for evaluation result."""
         if not self.cache:
             return None
         q = query if query is not None else ""
-        model_name = self.provider.model if hasattr(self.provider, "model") else "gemini-3.5-flash"
-        if hasattr(self.cache, "_compute_hash"):
-            return self.cache.get(
-                generated_answer=generated_answer,
-                query=q,
-                context=context,
-                model=model_name,
-                prompt_template=JUDGE_PROMPT_TEMPLATE
-            )
-        else:
-            return self.cache.get("", context, generated_answer)
+        model_name = self.provider.model
+        return self.cache.get(
+            generated_answer=generated_answer,
+            query=q,
+            context=context,
+            model=model_name,
+            prompt_template=JUDGE_PROMPT_TEMPLATE
+        )
 
     def _is_local_fallback_required(self) -> bool:
         """Determines if the judge should use local deterministic grading because no remote API key is configured."""
@@ -59,20 +67,17 @@ class LLMJudge:
     async def evaluate(self, context: str, expected_answer: str, generated_answer: str, query: Optional[str] = None) -> dict:
         """Evaluates a generated response against context and expected answer."""
         q = query if query is not None else expected_answer
-        model_name = self.provider.model if hasattr(self.provider, "model") else "gemini-3.5-flash"
+        model_name = self.provider.model
 
         # Check cache first if caching is enabled
         if self.cache:
-            if hasattr(self.cache, "_compute_hash"):
-                cached = self.cache.get(
-                    generated_answer=generated_answer,
-                    query=q,
-                    context=context,
-                    model=model_name,
-                    prompt_template=JUDGE_PROMPT_TEMPLATE
-                )
-            else:
-                cached = self.cache.get(expected_answer, context, generated_answer)
+            cached = self.cache.get(
+                generated_answer=generated_answer,
+                query=q,
+                context=context,
+                model=model_name,
+                prompt_template=JUDGE_PROMPT_TEMPLATE
+            )
             if cached is not None:
                 return cached
 
@@ -124,20 +129,18 @@ class LLMJudge:
 
         if result.get("judge_mode") != "fallback":
             call_cost = calculate_token_cost(model_name, input_tokens, output_tokens)
-            self.total_cost += call_cost
+            async with self._cost_lock:
+                self.total_cost += call_cost
 
         if self.cache:
-            if hasattr(self.cache, "_compute_hash"):
-                self.cache.set(
-                    generated_answer=generated_answer,
-                    query=q,
-                    context=context,
-                    model=model_name,
-                    prompt_template=JUDGE_PROMPT_TEMPLATE,
-                    result=result
-                )
-            else:
-                self.cache.set(expected_answer, context, generated_answer, result)
+            self.cache.set(
+                generated_answer=generated_answer,
+                query=q,
+                context=context,
+                model=model_name,
+                prompt_template=JUDGE_PROMPT_TEMPLATE,
+                result=result
+            )
 
         return result
 
@@ -183,9 +186,9 @@ class LLMJudge:
         q = query or ""
         gt = ground_truth or ""
         formatted_contexts = "\n---\n".join(retrieved_contexts)
-        model_name = self.provider.model if hasattr(self.provider, "model") else "gemini-3.5-flash"
+        model_name = self.provider.model
 
-        if self.cache and hasattr(self.cache, "_compute_hash"):
+        if self.cache:
             cached = self.cache.get(
                 generated_answer=formatted_contexts,
                 query=q,
@@ -218,7 +221,7 @@ class LLMJudge:
                 else:
                     raise
 
-        if self.cache and hasattr(self.cache, "_compute_hash"):
+        if self.cache:
             self.cache.set(
                 generated_answer=formatted_contexts,
                 query=q,
@@ -270,6 +273,3 @@ class LLMJudge:
             "context_recall": r_val,
             "context_recall_reasoning": f"Local fallback: Word overlap recall is {r_val}."
         }
-
-# Backward compatibility alias
-GeminiJudge = LLMJudge

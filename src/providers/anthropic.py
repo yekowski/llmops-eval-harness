@@ -54,7 +54,7 @@ class AnthropicProvider(LLMProvider):
             payload["system"] = system_prompt
 
         client = self._get_client()
-        max_retries = 3
+        max_retries = 2
         last_exception = None
 
         for attempt in range(max_retries):
@@ -80,7 +80,7 @@ class AnthropicProvider(LLMProvider):
                 status_code = e.response.status_code
                 last_exception = e
                 if status_code in [429, 500, 502, 503, 504] and attempt < max_retries - 1:
-                    backoff = (2 ** attempt) + random.uniform(0.1, 0.5)
+                    backoff = 0.2 * (2 ** attempt) + random.uniform(0.05, 0.15)
                     await asyncio.sleep(backoff)
                     continue
 
@@ -91,7 +91,7 @@ class AnthropicProvider(LLMProvider):
             except httpx.RequestError as e:
                 last_exception = e
                 if attempt < max_retries - 1:
-                    backoff = (2 ** attempt) + random.uniform(0.1, 0.5)
+                    backoff = 0.2 * (2 ** attempt) + random.uniform(0.05, 0.15)
                     await asyncio.sleep(backoff)
                     continue
                 raise ProviderAPIError(f"Anthropic API request error: {str(e)}")

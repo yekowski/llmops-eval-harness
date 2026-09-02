@@ -3,33 +3,37 @@ import sys
 import yaml
 from typing import Dict, Any, Optional
 
-_PRICING_CACHE: Optional[Dict[str, Any]] = None
+_PRICING_CACHE: Dict[str, Dict[str, Any]] = {}
+
+_DEFAULT_BUILTIN_PRICING: Dict[str, Any] = {
+    "gemini-3.5-flash": {"input_cost_per_1k": 0.000075, "output_cost_per_1k": 0.000300},
+    "gemini-1.5-flash": {"input_cost_per_1k": 0.000075, "output_cost_per_1k": 0.000300},
+    "gemini-1.5-pro": {"input_cost_per_1k": 0.001250, "output_cost_per_1k": 0.005000},
+    "gpt-4o": {"input_cost_per_1k": 0.005000, "output_cost_per_1k": 0.015000},
+    "gpt-4o-mini": {"input_cost_per_1k": 0.000150, "output_cost_per_1k": 0.000600},
+    "claude-3-5-sonnet-20240620": {"input_cost_per_1k": 0.003000, "output_cost_per_1k": 0.015000},
+    "claude-3-5-haiku": {"input_cost_per_1k": 0.000800, "output_cost_per_1k": 0.004000},
+    "deepseek-chat": {"input_cost_per_1k": 0.000140, "output_cost_per_1k": 0.000280},
+    "mock": {"input_cost_per_1k": 0.0, "output_cost_per_1k": 0.0},
+    "local": {"input_cost_per_1k": 0.0, "output_cost_per_1k": 0.0},
+}
 
 def load_pricing_config(config_path: str = "configs/pricing.yaml") -> Dict[str, Any]:
-    """Loads model pricing definitions from YAML file with fallback caching."""
-    global _PRICING_CACHE
-    if _PRICING_CACHE is not None and not os.path.exists(config_path):
-        return _PRICING_CACHE
+    """Loads model pricing definitions from YAML file with path-isolated caching."""
+    if config_path in _PRICING_CACHE:
+        return _PRICING_CACHE[config_path]
 
     if os.path.exists(config_path):
         try:
             with open(config_path, "r") as f:
                 data = yaml.safe_load(f) or {}
-                _PRICING_CACHE = data.get("models", {})
-                return _PRICING_CACHE
+                models_dict = data.get("models", {})
+                _PRICING_CACHE[config_path] = models_dict
+                return models_dict
         except Exception as e:
             print(f"[WARNING] Could not load pricing config from {config_path}: {e}", file=sys.stderr)
 
-    # Built-in fallback in case config file is missing
-    _PRICING_CACHE = {
-        "gemini-3.5-flash": {"input_cost_per_1k": 0.000075, "output_cost_per_1k": 0.000300},
-        "gemini-1.5-flash": {"input_cost_per_1k": 0.000075, "output_cost_per_1k": 0.000300},
-        "gpt-4o": {"input_cost_per_1k": 0.005000, "output_cost_per_1k": 0.015000},
-        "gpt-4o-mini": {"input_cost_per_1k": 0.000150, "output_cost_per_1k": 0.000600},
-        "claude-3-5-sonnet-20240620": {"input_cost_per_1k": 0.003000, "output_cost_per_1k": 0.015000},
-        "deepseek-chat": {"input_cost_per_1k": 0.000140, "output_cost_per_1k": 0.000280},
-    }
-    return _PRICING_CACHE
+    return _DEFAULT_BUILTIN_PRICING
 
 def calculate_token_cost(
     model_name: str,
@@ -38,14 +42,14 @@ def calculate_token_cost(
     pricing_config: Optional[Dict[str, Any]] = None
 ) -> float:
     """Calculates total evaluation cost in USD based on input and output token counts."""
-    pricing = pricing_config or load_pricing_config()
+    pricing = pricing_config if pricing_config is not None else load_pricing_config()
     model_key = (model_name or "").lower().strip()
 
     rates = pricing.get(model_key)
     if rates is None:
         # Attempt partial match for model variants (e.g., "gemini-3.5-flash" in "models/gemini-3.5-flash")
         for key, val in pricing.items():
-            if key in model_key or model_key in key:
+            if len(key) >= 4 and (key in model_key or model_key in key):
                 rates = val
                 break
 
