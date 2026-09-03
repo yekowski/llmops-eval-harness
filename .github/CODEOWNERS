@@ -1,0 +1,12 @@
+# Governance Code Owners Configuration
+# In GitHub repository settings, ensure branch protection on `main` requires review from Code Owners:
+# Settings -> Branches -> Add / Edit rule -> Check "Require review from Code Owners" with required approving reviews >= 1.
+
+/configs/pr.yaml @yekowski
+/.github/workflows/ @yekowski
+/run_eval.py @yekowski
+/src/cli.py @yekowski
+/src/evaluation/ @yekowski
+/src/runners/ @yekowski
+/src/providers/ @yekowski
+/src/schemas/ @yekowski

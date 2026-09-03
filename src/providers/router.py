@@ -118,6 +118,11 @@ class ProviderRouter(LLMProvider):
         """Exposes the active provider model dynamically to keep token cost tracking accurate."""
         return getattr(self.active_provider, "model", "mock")
 
+    @model.setter
+    def model(self, value: str) -> None:
+        if self.active_provider:
+            self.active_provider.model = value
+
     async def close(self) -> None:
         """Closes all underlying provider clients to prevent open connection leaks."""
         for provider in self.providers:

@@ -3,7 +3,7 @@ import time
 import random
 import asyncio
 import httpx
-from typing import Optional
+from typing import Optional, Any
 from src.providers.base import LLMProvider, ProviderResponse, ProviderRateLimitError, ProviderAPIError
 
 class OpenAICompatibleProvider(LLMProvider):
@@ -48,7 +48,7 @@ class OpenAICompatibleProvider(LLMProvider):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "messages": [
                 {"role": "user", "content": prompt}
@@ -65,7 +65,7 @@ class OpenAICompatibleProvider(LLMProvider):
 
         client = self._get_client()
         max_retries = 2
-        last_exception = None
+        last_exception: Optional[Exception] = None
 
         for attempt in range(max_retries):
             start_time = time.perf_counter()

@@ -3,7 +3,7 @@ import json
 import hashlib
 import asyncio
 import tempfile
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 
 class EvalCache:
     def __init__(self, cache_dir: str = ".eval_cache"):

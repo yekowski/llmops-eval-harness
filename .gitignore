@@ -20,5 +20,11 @@ build/
 dist/
 .pytest_cache/
 
+# Virtual environments & IDEs
+.venv/
+.vscode/
+.mypy_cache/
+.ruff_cache/
+
 # Experiment tracking history
 /runs/*.jsonl

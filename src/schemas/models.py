@@ -32,6 +32,8 @@ class JudgeRetrievalOutput(BaseModel):
     context_recall: float = Field(..., ge=0.0, le=1.0)
     context_recall_reasoning: str = ""
 
+JudgeProvenance = Literal["remote_llm", "local_model", "mock", "deterministic_fallback", "unknown"]
+
 class EvaluationResult(BaseModel):
     passed: bool
     latency: float = Field(..., description="System Under Test response latency in seconds")
@@ -49,7 +51,9 @@ class EvaluationResult(BaseModel):
     context_recall: Optional[float] = None
     judge_latency: float = Field(default=0.0, description="Judge evaluation execution latency in seconds")
     judge_mode: Literal["llm", "fallback", "cache"] = "llm"
+    judge_provenance: JudgeProvenance = "unknown"
     retrieval_judge_mode: Optional[Literal["llm", "fallback", "cache"]] = None
+    retrieval_judge_provenance: Optional[JudgeProvenance] = None
 
 class ConcurrencyConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")

@@ -2,7 +2,6 @@ import os
 import json
 import hashlib
 import pytest
-import tempfile
 import yaml
 
 from run_eval import (
@@ -11,11 +10,6 @@ from run_eval import (
     evaluate_dataset,
     enforce_slas_and_report,
 )
-from src.schemas.models import DatasetEntry
-from src.providers.mock import MockProvider
-from src.clients.sut import LLMProviderSUT
-from src.evaluation.judge import LLMJudge
-from src.utils.cache import EvalCache
 
 @pytest.mark.asyncio
 async def test_end_to_end_pipeline(tmp_path, monkeypatch):

@@ -1,7 +1,6 @@
 import json
-import sys
 import asyncio
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from pydantic import ValidationError
 from src.evaluation.prompts.judge_templates import JUDGE_PROMPT_TEMPLATE, RETRIEVAL_JUDGE_PROMPT_TEMPLATE
 from src.utils.cache import EvalCache
@@ -76,6 +75,25 @@ class LLMJudge:
             prompt_template=JUDGE_PROMPT_TEMPLATE,
             prompt_template_version="v2"
         )
+        if cached is None and hasattr(self.provider, "providers"):
+            for p in self.provider.providers:
+                p_cls = getattr(p, "provider_name", p.__class__.__name__)
+                p_model = getattr(p, "model", "")
+                c = self.cache.get(
+                    generated_answer=generated_answer,
+                    query=q,
+                    context=context,
+                    expected_answer=expected_answer,
+                    ground_truth=ground_truth,
+                    provider_class=p_cls,
+                    model=p_model,
+                    prompt_template=JUDGE_PROMPT_TEMPLATE,
+                    prompt_template_version="v2"
+                )
+                if c is not None:
+                    cached = c
+                    break
+
         if cached is not None:
             res = dict(cached)
             res["passed"] = self._compute_passed(
@@ -84,6 +102,7 @@ class LLMJudge:
                 res.get("correctness", 0.0)
             )
             res["judge_mode"] = "cache"
+            res["judge_provenance"] = cached.get("judge_provenance", "unknown")
             return res
         return None
 
@@ -120,7 +139,7 @@ class LLMJudge:
         initial_prov_cls = self._get_provider_class()
         initial_model_name = self.provider.model
 
-        # Stable per-evaluation single-flight lock key based on inputs
+        # Stable per-evaluation single-flight lock key based on inputs and template (router-resilient)
         lock_key = (
             self.cache._compute_hash(
                 generated_answer=generated_answer,
@@ -128,8 +147,8 @@ class LLMJudge:
                 context=context,
                 expected_answer=expected_answer,
                 ground_truth=gt,
-                provider_class=initial_prov_cls,
-                model=initial_model_name,
+                provider_class="",
+                model="",
                 prompt_template=JUDGE_PROMPT_TEMPLATE,
                 prompt_template_version="v2"
             )
@@ -140,19 +159,40 @@ class LLMJudge:
         lock = await self.cache.get_lock_for_key(lock_key) if (self.cache and lock_key) else asyncio.Lock()
 
         async with lock:
-            # Recompute/check cache inside single-flight lock
+            # Recompute/check cache inside single-flight lock across active or fallback router providers
             if self.cache:
+                current_prov_cls = self._get_provider_class()
+                current_model_name = self.provider.model
                 cached = self.cache.get(
                     generated_answer=generated_answer,
                     query=q,
                     context=context,
                     expected_answer=expected_answer,
                     ground_truth=gt,
-                    provider_class=initial_prov_cls,
-                    model=initial_model_name,
+                    provider_class=current_prov_cls,
+                    model=current_model_name,
                     prompt_template=JUDGE_PROMPT_TEMPLATE,
                     prompt_template_version="v2"
                 )
+                if cached is None and hasattr(self.provider, "providers"):
+                    for p in self.provider.providers:
+                        p_cls = getattr(p, "provider_name", p.__class__.__name__)
+                        p_model = getattr(p, "model", "")
+                        c = self.cache.get(
+                            generated_answer=generated_answer,
+                            query=q,
+                            context=context,
+                            expected_answer=expected_answer,
+                            ground_truth=gt,
+                            provider_class=p_cls,
+                            model=p_model,
+                            prompt_template=JUDGE_PROMPT_TEMPLATE,
+                            prompt_template_version="v2"
+                        )
+                        if c is not None:
+                            cached = c
+                            break
+
                 if cached is not None:
                     res = dict(cached)
                     res["passed"] = self._compute_passed(
@@ -161,6 +201,7 @@ class LLMJudge:
                         res.get("correctness", 0.0)
                     )
                     res["judge_mode"] = "cache"
+                    res["judge_provenance"] = cached.get("judge_provenance", "unknown")
                     return res
 
             prompt = JUDGE_PROMPT_TEMPLATE.format(
@@ -171,7 +212,8 @@ class LLMJudge:
 
             input_tokens = 0
             output_tokens = 0
-            judge_mode = "llm"
+            judge_mode = "fallback"
+            judge_provenance = "unknown"
             actual_prov_cls = initial_prov_cls
             actual_model_name = initial_model_name
             actual_execution_mode = "remote"
@@ -179,6 +221,7 @@ class LLMJudge:
             if self._is_local_fallback_required():
                 result_data = self._local_deterministic_grade(context, expected_answer, generated_answer)
                 judge_mode = "fallback"
+                judge_provenance = "deterministic_fallback"
                 actual_execution_mode = "mock"
             else:
                 try:
@@ -195,9 +238,18 @@ class LLMJudge:
                     else:
                         text_response = str(provider_resp)
 
-                    # Strict rule: only execution_mode == "remote" is classified as judge_mode == "llm"
-                    if actual_execution_mode != "remote" or actual_prov_cls in ["MockProvider", "MockRAGClient"]:
+                    if actual_execution_mode == "local":
                         judge_mode = "fallback"
+                        judge_provenance = "local_model"
+                    elif actual_prov_cls in ["MockProvider", "MockRAGClient"] or actual_execution_mode == "mock":
+                        judge_mode = "fallback"
+                        judge_provenance = "mock"
+                    elif actual_execution_mode == "remote":
+                        judge_mode = "llm"
+                        judge_provenance = "remote_llm"
+                    else:
+                        judge_mode = "fallback"
+                        judge_provenance = "unknown"
 
                     cleaned_response = strip_markdown_json(text_response)
                     parsed_json = json.loads(cleaned_response)
@@ -209,6 +261,7 @@ class LLMJudge:
                     if status_code in [401, 403, 429, 500] or isinstance(e, (ValidationError, json.JSONDecodeError)) or "rate limit" in msg or "api key is required" in msg or "circuit open" in msg or "all providers in fallback chain failed" in msg:
                         result_data = self._local_deterministic_grade(context, expected_answer, generated_answer)
                         judge_mode = "fallback"
+                        judge_provenance = "deterministic_fallback"
                         actual_execution_mode = "mock"
                     else:
                         raise
@@ -222,6 +275,7 @@ class LLMJudge:
                 **result_data,
                 "passed": passed,
                 "judge_mode": judge_mode,
+                "judge_provenance": judge_provenance,
                 "judge_prompt_tokens": input_tokens,
                 "judge_completion_tokens": output_tokens,
             }
@@ -231,7 +285,7 @@ class LLMJudge:
             if output_tokens == 0:
                 output_tokens = max(1, len(json.dumps(result)) // 4)
 
-            if judge_mode == "llm" and actual_execution_mode == "remote":
+            if judge_mode == "llm" and actual_execution_mode == "remote" and judge_provenance == "remote_llm":
                 call_cost = calculate_token_cost(actual_model_name, input_tokens, output_tokens)
                 async with self._cost_lock:
                     self.total_cost += call_cost
@@ -241,8 +295,8 @@ class LLMJudge:
             else:
                 result["judge_cost"] = 0.0
 
-            # Only cache authoritative remote judge evaluations
-            if self.cache and judge_mode == "llm" and actual_execution_mode == "remote":
+            # Only cache authoritative remote judge evaluations with verified remote_llm provenance
+            if self.cache and judge_mode == "llm" and actual_execution_mode == "remote" and judge_provenance == "remote_llm":
                 cache_payload = {
                     "faithfulness": faithfulness,
                     "faithfulness_reasoning": result_data.get("faithfulness_reasoning", ""),
@@ -251,6 +305,7 @@ class LLMJudge:
                     "correctness": correctness,
                     "correctness_reasoning": result_data.get("correctness_reasoning", ""),
                     "judge_mode": "llm",
+                    "judge_provenance": "remote_llm",
                     "judge_prompt_tokens": input_tokens,
                     "judge_completion_tokens": output_tokens,
                     "judge_cost": result.get("judge_cost", 0.0)
@@ -306,6 +361,7 @@ class LLMJudge:
         if not retrieved_contexts:
             return {
                 "judge_mode": "fallback",
+                "judge_provenance": "deterministic_fallback",
                 "context_precision": 0.0,
                 "context_precision_reasoning": "No retrieved contexts provided.",
                 "context_recall": 0.0,
@@ -321,6 +377,7 @@ class LLMJudge:
         initial_prov_cls = self._get_provider_class()
         initial_model_name = self.provider.model
 
+        # Stable per-evaluation single-flight lock key based on inputs and template (router-resilient)
         lock_key = (
             self.cache._compute_hash(
                 generated_answer=formatted_contexts,
@@ -328,8 +385,8 @@ class LLMJudge:
                 context=gt,
                 expected_answer="",
                 ground_truth=gt,
-                provider_class=initial_prov_cls,
-                model=initial_model_name,
+                provider_class="",
+                model="",
                 prompt_template=RETRIEVAL_JUDGE_PROMPT_TEMPLATE,
                 prompt_template_version="v2"
             )
@@ -341,20 +398,42 @@ class LLMJudge:
 
         async with lock:
             if self.cache:
+                current_prov_cls = self._get_provider_class()
+                current_model_name = self.provider.model
                 cached = self.cache.get(
                     generated_answer=formatted_contexts,
                     query=q,
                     context=gt,
                     expected_answer="",
                     ground_truth=gt,
-                    provider_class=initial_prov_cls,
-                    model=initial_model_name,
+                    provider_class=current_prov_cls,
+                    model=current_model_name,
                     prompt_template=RETRIEVAL_JUDGE_PROMPT_TEMPLATE,
                     prompt_template_version="v2"
                 )
+                if cached is None and hasattr(self.provider, "providers"):
+                    for p in self.provider.providers:
+                        p_cls = getattr(p, "provider_name", p.__class__.__name__)
+                        p_model = getattr(p, "model", "")
+                        c = self.cache.get(
+                            generated_answer=formatted_contexts,
+                            query=q,
+                            context=gt,
+                            expected_answer="",
+                            ground_truth=gt,
+                            provider_class=p_cls,
+                            model=p_model,
+                            prompt_template=RETRIEVAL_JUDGE_PROMPT_TEMPLATE,
+                            prompt_template_version="v2"
+                        )
+                        if c is not None:
+                            cached = c
+                            break
+
                 if cached is not None:
                     cached_copy = dict(cached)
                     cached_copy["judge_mode"] = "cache"
+                    cached_copy["judge_provenance"] = cached.get("judge_provenance", "unknown")
                     return cached_copy
 
             prompt = RETRIEVAL_JUDGE_PROMPT_TEMPLATE.format(
@@ -365,7 +444,8 @@ class LLMJudge:
 
             input_tokens = 0
             output_tokens = 0
-            judge_mode = "llm"
+            judge_mode = "fallback"
+            judge_provenance = "unknown"
             actual_prov_cls = initial_prov_cls
             actual_model_name = initial_model_name
             actual_execution_mode = "remote"
@@ -373,6 +453,7 @@ class LLMJudge:
             if self._is_local_fallback_required():
                 result_data = self._local_deterministic_retrieval_grade(q, retrieved_contexts, gt)
                 judge_mode = "fallback"
+                judge_provenance = "deterministic_fallback"
                 actual_execution_mode = "mock"
             else:
                 try:
@@ -389,8 +470,18 @@ class LLMJudge:
                     else:
                         text_response = str(provider_resp)
 
-                    if actual_execution_mode != "remote" or actual_prov_cls in ["MockProvider", "MockRAGClient"]:
+                    if actual_execution_mode == "local":
                         judge_mode = "fallback"
+                        judge_provenance = "local_model"
+                    elif actual_prov_cls in ["MockProvider", "MockRAGClient"] or actual_execution_mode == "mock":
+                        judge_mode = "fallback"
+                        judge_provenance = "mock"
+                    elif actual_execution_mode == "remote":
+                        judge_mode = "llm"
+                        judge_provenance = "remote_llm"
+                    else:
+                        judge_mode = "fallback"
+                        judge_provenance = "unknown"
 
                     cleaned_response = strip_markdown_json(text_response)
                     parsed_json = json.loads(cleaned_response)
@@ -402,6 +493,7 @@ class LLMJudge:
                     if status_code in [401, 403, 429, 500] or isinstance(e, (ValidationError, json.JSONDecodeError)) or "rate limit" in msg or "api key is required" in msg or "circuit open" in msg or "all providers in fallback chain failed" in msg:
                         result_data = self._local_deterministic_retrieval_grade(q, retrieved_contexts, gt)
                         judge_mode = "fallback"
+                        judge_provenance = "deterministic_fallback"
                         actual_execution_mode = "mock"
                     else:
                         raise
@@ -412,7 +504,7 @@ class LLMJudge:
                 output_tokens = max(1, len(json.dumps(result_data)) // 4)
 
             call_cost = 0.0
-            if judge_mode == "llm" and actual_execution_mode == "remote":
+            if judge_mode == "llm" and actual_execution_mode == "remote" and judge_provenance == "remote_llm":
                 call_cost = calculate_token_cost(actual_model_name, input_tokens, output_tokens)
                 async with self._cost_lock:
                     self.total_cost += call_cost
@@ -422,12 +514,13 @@ class LLMJudge:
             result = {
                 **result_data,
                 "judge_mode": judge_mode,
+                "judge_provenance": judge_provenance,
                 "judge_prompt_tokens": input_tokens,
                 "judge_completion_tokens": output_tokens,
                 "judge_cost": call_cost
             }
 
-            if self.cache and judge_mode == "llm" and actual_execution_mode == "remote":
+            if self.cache and judge_mode == "llm" and actual_execution_mode == "remote" and judge_provenance == "remote_llm":
                 self.cache.set(
                     generated_answer=formatted_contexts,
                     query=q,

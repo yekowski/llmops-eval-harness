@@ -8,6 +8,10 @@ class MockProvider(LLMProvider):
     def model(self) -> str:
         return self._model
 
+    @model.setter
+    def model(self, value: str) -> None:
+        self._model = value
+
     async def generate(self, prompt: str, **kwargs) -> ProviderResponse:
         """Instantly returns a mocked correct response string with scorecard metrics or echo for SUT."""
         if "context_precision" in prompt or "retrieved_contexts" in prompt:

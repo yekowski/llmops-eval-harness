@@ -1,6 +1,6 @@
-import time
 import asyncio
 import pytest
+from typing import Literal
 from src.providers.base import LLMProvider, ProviderResponse, ProviderRateLimitError, ProviderAPIError
 from src.providers.router import ProviderRouter
 
@@ -23,7 +23,7 @@ class FailingProvider(LLMProvider):
             raise ProviderAPIError("500 Internal Error", status_code=self.status_code)
 
 class WorkingProvider(LLMProvider):
-    def __init__(self, response_text: str = "Success", delay_seconds: float = 0.0, execution_mode: str = "remote", model: str = "mock-model"):
+    def __init__(self, response_text: str = "Success", delay_seconds: float = 0.0, execution_mode: Literal["remote", "local", "mock"] = "remote", model: str = "mock-model"):
         self.response_text = response_text
         self.delay_seconds = delay_seconds
         self.execution_mode = execution_mode

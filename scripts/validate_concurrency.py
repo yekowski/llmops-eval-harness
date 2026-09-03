@@ -24,18 +24,18 @@ async def main():
     end_time = time.perf_counter()
 
     total_duration = end_time - start_time
-    print(f"Completed execution of 50 queries.")
+    print("Completed execution of 50 queries.")
     print(f"Total time elapsed: {total_duration:.2f} seconds")
 
     # Assertions to confirm concurrent behavior
     assert len(results) == 50, f"Expected 50 results, got {len(results)}"
-    
+
     # Each successful run should have passed
     assert all(r.passed for r in results), "Expected all evaluation results to have passed=True"
-    
+
     # Verify concurrency: if run serially, 50 queries with 1s sleep would take 50 seconds.
     # Concurrently, it should take just slightly over 1 second.
-    print(f"Verifying concurrent execution speed...")
+    print("Verifying concurrent execution speed...")
     if total_duration < 2.0:
         print("SUCCESS: Execution completed in under 2.0 seconds, confirming concurrent execution.")
     else:

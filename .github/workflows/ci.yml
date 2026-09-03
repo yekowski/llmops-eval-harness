@@ -7,6 +7,32 @@ on:
     branches: [ main ]
 
 jobs:
+  lint:
+    name: Lint & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Tools and Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy types-PyYAML
+          pip install -r requirements.lock
+          pip install -e .
+
+      - name: Run Ruff Linter
+        run: |
+          ruff check .
+
+      - name: Run Mypy Type Checking
+        run: |
+          mypy src/ tests/
+
   test:
     name: Test & Build Validation
     runs-on: ubuntu-latest
@@ -25,11 +51,14 @@ jobs:
       - name: Install build tools and package
         run: |
           python -m pip install --upgrade pip build wheel
+          pip install -r requirements.lock
           pip install -e ".[dev]"
 
-      - name: Verify Package Build
+      - name: Verify Package Build & Entrypoints
         run: |
           python -m build --wheel
+          python3 -m zipfile -l dist/*.whl | grep "cli.py"
+          python3 -m zipfile -l dist/*.whl | grep "run_eval.py"
 
       - name: Run Pytest Test Suite
         run: |

@@ -47,39 +47,64 @@ A lightweight, deterministic, and asynchronous Python framework for evaluating L
 └── README.md                # This file
 ```
 
+## Installation & Environment Setup
+
+### Core Evaluation & CI Harness
+```bash
+pip install -r requirements.lock
+pip install .
+```
+Or for local development:
+```bash
+pip install -e ".[dev]"
+```
+
+### Telemetry Dashboard (Optional)
+The Streamlit and Plotly interactive dashboard dependencies are decoupled into the `dashboard` optional extra:
+```bash
+pip install ".[dashboard]"
+streamlit run src/reporters/dashboard.py
+```
+
 ---
 
-## Local Verification Commands
+## CLI & Evaluation Usage
 
-To run scripts locally, make sure you are in the project root directory and set the `PYTHONPATH`:
-
-### 1. Run Concurrency Checks
-Validates that 50 queries execute concurrently in ~1.00 second:
+Once installed, invoke the CLI directly:
 ```bash
-PYTHONPATH=. python3 scripts/validate_concurrency.py
+llmops-eval --config configs/pr.yaml
+```
+Or via the backward-compatible entry point:
+```bash
+python run_eval.py --config configs/pr.yaml
 ```
 
-### 2. Run LLM Judge Meta-Evaluation
-Runs meta-eval checks of the LLM Judge against the human benchmark dataset, calculating agreement metrics:
+To view past evaluation experiments and SLA records:
 ```bash
-PYTHONPATH=. python3 scripts/run_meta_eval.py
+llmops-eval --history
 ```
 
-### 3. Run the Main SLA Validation CLI
-Runs SUT evaluations against the SLA parameters specified in `configs/pr.yaml` (if no `GEMINI_API_KEY` is present, it will gracefully fall back to local rule-based evaluations):
-```bash
-PYTHONPATH=. python3 run_eval.py --config configs/pr.yaml
-```
+---
+
+## Governance & GitHub Branch Protection
+
+Code ownership is canonically configured in [`.github/CODEOWNERS`](.github/CODEOWNERS). To ensure these owner reviews and evaluation gates cannot be bypassed, configure branch protection on `main`:
+
+1. In GitHub repository settings, navigate to **Settings** -> **Branches** -> **Branch protection rules**.
+2. Add or edit the rule targeting `main`:
+   - Enable **"Require a pull request before merging"**.
+   - Enable **"Require approvals"** (set to at least `1`).
+   - Enable **"Require review from Code Owners"**.
+   - Enable **"Require status checks to pass before merging"** and add:
+     - `CI Pipeline` (`lint`, `test`)
+     - `LLMOps CI/CD PR Evaluation` (`run-evaluation`)
+   - Enable **"Do not allow bypassing the above settings"** for administrators.
 
 ---
 
 ## CI/CD Workflow Integration
 
-On every Pull Request to the `main` branch, the [eval_pr.yml](file://.github/workflows/eval_pr.yml) workflow:
-1. Installs Python dependencies (`httpx`, `pydantic`, `pyyaml`).
-2. Pulls the `GEMINI_API_KEY` from GitHub secrets.
-3. Triggers the SLA check via `run_eval.py`.
-4. Writes a clean Markdown summary table directly to the **GitHub Actions PR Summary page**.
-5. Exits with code `1` if SLAs are violated, failing the build and blocking PR merge.
-
-Testing GitHub Actions CI/CD.
+On every Pull Request to the `main` branch:
+1. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) validates Ruff linting, Mypy type safety, package wheel build, and Pytest coverage across Python 3.10–3.13.
+2. [`.github/workflows/eval_pr.yml`](.github/workflows/eval_pr.yml) installs the wheel, runs `llmops-eval --config configs/pr.yaml`, evaluates SLA gates, and posts a Markdown report to the GitHub Actions PR summary.
+3. Exits with code `1` if SLAs are violated or uncertified judge provenance is detected in strict CI mode, blocking PR merge.

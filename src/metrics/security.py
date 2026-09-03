@@ -30,7 +30,7 @@ def scan_text(text: str) -> Dict[str, bool]:
     jailbreak_detected = any(
         re.search(pattern, text, re.IGNORECASE) for pattern in JAILBREAK_PATTERNS
     )
-    
+
     leakage_detected = any(
         re.search(pattern, text, re.IGNORECASE) for pattern in PROMPT_LEAKAGE_PATTERNS
     )

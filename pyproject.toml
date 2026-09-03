@@ -16,19 +16,27 @@ dependencies = [
     "httpx>=0.25.0",
     "pydantic>=2.0.0",
     "pyyaml>=6.0.1",
+]
+
+[project.optional-dependencies]
+dashboard = [
     "streamlit>=1.28.0",
     "pandas>=2.0.0",
     "plotly>=5.15.0",
 ]
-
-[project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+    "types-PyYAML>=6.0.12",
 ]
 
 [project.scripts]
-llmops-eval = "run_eval:main"
+llmops-eval = "src.cli:main"
+
+[tool.setuptools]
+py-modules = ["run_eval"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -38,3 +46,18 @@ include = ["src*", "configs*", "datasets*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+follow_imports = "silent"
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+ignore_missing_imports = true

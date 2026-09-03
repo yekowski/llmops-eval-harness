@@ -1,6 +1,5 @@
-import pytest
 from src.utils.helpers import strip_markdown_json, resolve_error_status_code
-from src.providers.base import ProviderRateLimitError, ProviderAPIError
+from src.providers.base import ProviderRateLimitError
 
 def test_strip_markdown_json_plain():
     text = '{"faithfulness": 0.9, "correctness": 0.9}'

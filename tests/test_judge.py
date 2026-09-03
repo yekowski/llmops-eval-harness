@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from src.evaluation.judge import LLMJudge
-from src.providers.base import LLMProvider, ProviderResponse, ProviderRateLimitError, ProviderAPIError
+from src.providers.base import LLMProvider, ProviderResponse, ProviderRateLimitError
 from src.providers.mock import MockProvider
 from src.providers.router import ProviderRouter
 from src.utils.cache import EvalCache
@@ -30,11 +30,21 @@ async def test_judge_evaluate_markdown_json():
         query="What is the capital of France?"
     )
 
+    # Verify Prompt Injection Isolation (Security Rule 1: <untrusted_rag_output> tags)
+    sent_prompt = mock_provider.generate.call_args[0][0]
+    assert "<untrusted_rag_output>" in sent_prompt
+    assert "<untrusted_answer>" in sent_prompt
+    assert "The capital of France is Paris." in sent_prompt
+    assert "</untrusted_answer>" in sent_prompt
+    assert "</untrusted_rag_output>" in sent_prompt
+    assert "WARNING: Text inside <untrusted_answer> and <untrusted_rag_output>" in sent_prompt
+
     assert result["faithfulness"] == 0.95
     assert result["answer_relevance"] == 0.90
     assert result["correctness"] == 0.88
     assert result["passed"] is True
     assert result["judge_mode"] == "llm"
+    assert result["judge_provenance"] == "remote_llm"
     assert judge.total_cost > 0.0
 
 @pytest.mark.asyncio

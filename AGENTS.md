@@ -57,3 +57,10 @@ We are building a lightweight, deterministic Python framework for evaluating LLM
 ## SUT vs. LLM Judge Provider Decoupling
 - Rule 13 (SUT vs. LLM Judge Provider Decoupling): SUT (System Under Test) execution and LLM Judge (`LLMJudge`) evaluation configurations must remain strictly decoupled and independent in `configs/*.yaml` (`sut` vs. `judge` blocks). Local SUT execution (e.g., Ollama, vLLM) must never force the LLM Judge to run on small local models; the Judge must independently route to capable cloud models (e.g., Gemini) or graceful deterministic local fallbacks.
 
+## Fail-Closed Judge Provenance
+- Rule 14 (Fail-Closed Judge Provenance): In strict CI environments (`judge_failure_policy: "fail"`), evaluation outcomes must fail closed if the judge provenance is uncertified (e.g., `local_model`, `mock`, `deterministic_fallback`, or `unknown`). Only verified remote LLM evaluations stamped with `remote_llm` are permitted to gate release pipelines.
+
+## Canonical Package Entry Point & Governance
+- Rule 15 (Canonical Package Entry Point & Governance): The CLI entrypoint is canonically defined in `src.cli:main` and invoked via `llmops-eval`. Code ownership is canonically defined in `.github/CODEOWNERS` and enforced via GitHub branch protection rules on `main`.
+
+

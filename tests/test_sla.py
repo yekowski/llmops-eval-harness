@@ -23,7 +23,8 @@ def sample_metrics():
         "avg_context_recall": 0.85,
         "has_fallback": False,
         "fallback_generation_count": 0,
-        "fallback_retrieval_count": 0
+        "fallback_retrieval_count": 0,
+        "uncertified_judge_count": 0
     }
 
 @pytest.fixture
@@ -130,7 +131,7 @@ def test_config_validation_concurrency_bounds():
 
 def test_config_validation_invalid_judge_policy():
     with pytest.raises(ValidationError):
-        HarnessConfig(judge_failure_policy="invalid_mode")
+        HarnessConfig(judge_failure_policy="invalid_mode")  # type: ignore[arg-type]
 
 def test_sla_failure_faithfulness(tmp_path, monkeypatch, sample_metrics, default_thresholds):
     monkeypatch.chdir(tmp_path)
@@ -215,3 +216,22 @@ def test_evaluate_sla_gates_pure_function(sample_metrics, default_thresholds):
     failures = _evaluate_sla_gates(sample_metrics, default_thresholds, judge_failure_policy="fail")
     assert len(failures) == 1
     assert "faithfulness" in failures[0]
+
+def test_sla_uncertified_judge_provenance_fails_closed(tmp_path, monkeypatch, sample_metrics, default_thresholds):
+    """Verifies that local/mock/unknown judge provenance strictly fails closed when judge_failure_policy='fail'."""
+    monkeypatch.chdir(tmp_path)
+    sample_metrics["uncertified_judge_count"] = 2
+    sample_metrics["has_fallback"] = False
+    judge = LLMJudge(provider=MockProvider())
+
+    passed = enforce_slas_and_report(
+        metrics=sample_metrics,
+        sla_thresholds=default_thresholds,
+        config_path="configs/test.yaml",
+        dataset_path="datasets/test.json",
+        sut_provider=MockProvider(),
+        judge=judge,
+        judge_failure_policy="fail"
+    )
+    assert passed is False
+

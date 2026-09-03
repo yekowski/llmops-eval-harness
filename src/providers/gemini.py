@@ -3,7 +3,7 @@ import time
 import random
 import asyncio
 import httpx
-from typing import Optional
+from typing import Optional, Any
 from src.providers.base import LLMProvider, ProviderResponse, ProviderRateLimitError, ProviderAPIError
 
 class GeminiProvider(LLMProvider):
@@ -43,7 +43,7 @@ class GeminiProvider(LLMProvider):
         if kwargs.get("json_mode") or kwargs.get("response_format") == "json_object" or kwargs.get("response_format") == {"type": "json_object"}:
             generation_config["responseMimeType"] = "application/json"
 
-        payload = {
+        payload: dict[str, Any] = {
             "contents": [{"parts": [{"text": prompt}]}]
         }
         if generation_config:
@@ -51,7 +51,7 @@ class GeminiProvider(LLMProvider):
 
         client = self._get_client()
         max_retries = 2
-        last_exception = None
+        last_exception: Optional[Exception] = None
 
         for attempt in range(max_retries):
             start_time = time.perf_counter()

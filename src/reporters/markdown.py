@@ -23,7 +23,7 @@ def generate_markdown_report(metrics: dict, thresholds: dict) -> str:
     pass_rate_status = "✅ PASS" if pass_rate_ratio >= min_pass_rate else "❌ FAIL"
     latency_status = "✅ PASS" if metrics["avg_latency_ms"] <= max_latency else "❌ FAIL"
     cost_status = "✅ PASS" if metrics["total_cost_usd"] <= max_cost else "❌ FAIL"
-    
+
     faithfulness_status = "✅ PASS" if metrics["avg_faithfulness"] >= min_faithfulness else "❌ FAIL"
     relevance_status = "✅ PASS" if metrics["avg_relevance"] >= min_relevance else "❌ FAIL"
     correctness_status = "✅ PASS" if metrics["avg_correctness"] >= min_correctness else "❌ FAIL"
@@ -33,17 +33,17 @@ def generate_markdown_report(metrics: dict, thresholds: dict) -> str:
     # Deltas
     delta_pass_rate = metrics.get("delta_pass_rate_pct")
     pass_rate_change = format_delta(delta_pass_rate, ".2f") + "%" if delta_pass_rate is not None else "-"
-    
+
     delta_latency = metrics.get("delta_latency_ms")
     latency_change = format_delta(delta_latency, ".2f") + " ms" if delta_latency is not None else "-"
-    
+
     delta_cost = metrics.get("delta_cost_usd")
     cost_change = format_delta(delta_cost, ".6f") if delta_cost is not None else "-"
 
     faithfulness_change = format_delta(metrics.get("delta_faithfulness"), ".2f")
     relevance_change = format_delta(metrics.get("delta_relevance"), ".2f")
     correctness_change = format_delta(metrics.get("delta_correctness"), ".2f")
-    
+
     markdown_rows = [
         f"| **Pass Rate** | >= {min_pass_rate * 100:.1f}% | {pass_rate_ratio * 100:.2f}% ({metrics['passed_count']}/{metrics['total_count']}) | {pass_rate_status} | {pass_rate_change} |",
         f"| **Average Latency** | <= {max_latency:.1f} ms | {metrics['avg_latency_ms']:.2f} ms | {latency_status} | {latency_change} |",

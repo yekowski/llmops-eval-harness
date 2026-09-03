@@ -7,7 +7,7 @@ def write_to_step_summary(markdown_content: str):
         try:
             with open(summary_file, "a") as f:
                 f.write("\n" + markdown_content + "\n")
-            print(f"Report written to GITHUB_STEP_SUMMARY.")
+            print("Report written to GITHUB_STEP_SUMMARY.")
         except Exception as e:
             print(f"Failed to write to GITHUB_STEP_SUMMARY: {e}")
     else:

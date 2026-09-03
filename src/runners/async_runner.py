@@ -3,8 +3,8 @@ import time
 import hashlib
 import asyncio
 import traceback
-from typing import List, Optional, Dict, Any
-from src.schemas.models import DatasetEntry, EvaluationResult, SUTExecutionResult
+from typing import List, Optional, Dict, Any, Literal
+from src.schemas.models import DatasetEntry, EvaluationResult, SUTExecutionResult, JudgeProvenance
 from src.clients.base import SystemUnderTest
 from src.evaluation.judge import LLMJudge
 from src.utils.pricing import calculate_token_cost
@@ -70,8 +70,10 @@ async def run_evaluation(
                     )
 
                 judge_latency = 0.0
-                judge_mode = "llm"
-                retrieval_judge_mode = None
+                judge_mode: Literal["llm", "fallback", "cache"] = "llm"
+                retrieval_judge_mode: Optional[Literal["llm", "fallback", "cache"]] = None
+                judge_provenance: JudgeProvenance = "unknown"
+                retrieval_judge_provenance: Optional[JudgeProvenance] = None
                 judge_prompt_tokens = 0
                 judge_completion_tokens = 0
                 judge_cost = 0.0
@@ -96,7 +98,7 @@ async def run_evaluation(
                             expected_answer=entry.expected_answer,
                             generated_answer=response,
                             query=entry.query,
-                            ground_truth=entry.ground_truth
+                            ground_truth=entry.ground_truth or entry.expected_answer
                         )
                         judge_latency = time.perf_counter() - judge_start
 
@@ -104,7 +106,9 @@ async def run_evaluation(
                     faithfulness = judge_res.get("faithfulness", 0.0)
                     relevance = judge_res.get("answer_relevance", 0.0)
                     correctness = judge_res.get("correctness", 0.0)
-                    judge_mode = judge_res.get("judge_mode", "llm")
+                    raw_judge_mode = judge_res.get("judge_mode", "llm")
+                    judge_mode = raw_judge_mode if raw_judge_mode in ("llm", "fallback", "cache") else "fallback"
+                    judge_provenance = judge_res.get("judge_provenance", "unknown")
                     judge_prompt_tokens += judge_res.get("judge_prompt_tokens", 0)
                     judge_completion_tokens += judge_res.get("judge_completion_tokens", 0)
                     judge_cost += judge_res.get("judge_cost", 0.0)
@@ -120,7 +124,9 @@ async def run_evaluation(
                         )
                         context_precision = retrieval_res.get("context_precision")
                         context_recall = retrieval_res.get("context_recall")
-                        retrieval_judge_mode = retrieval_res.get("judge_mode", "llm")
+                        raw_ret_mode = retrieval_res.get("judge_mode", "llm")
+                        retrieval_judge_mode = raw_ret_mode if raw_ret_mode in ("llm", "fallback", "cache") else "fallback"
+                        retrieval_judge_provenance = retrieval_res.get("judge_provenance", "unknown")
                         judge_prompt_tokens += retrieval_res.get("judge_prompt_tokens", 0)
                         judge_completion_tokens += retrieval_res.get("judge_completion_tokens", 0)
                         judge_cost += retrieval_res.get("judge_cost", 0.0)
@@ -131,6 +137,9 @@ async def run_evaluation(
                     correctness = 1.0
                     context_precision = 1.0 if entry.retrieved_contexts else None
                     context_recall = 1.0 if entry.retrieved_contexts else None
+                    judge_mode = "fallback"
+                    judge_provenance = "unknown"
+                    retrieval_judge_provenance = None
 
                 return EvaluationResult(
                     passed=passed,
@@ -149,7 +158,9 @@ async def run_evaluation(
                     context_recall=context_recall,
                     judge_latency=judge_latency,
                     judge_mode=judge_mode,
-                    retrieval_judge_mode=retrieval_judge_mode
+                    judge_provenance=judge_provenance,
+                    retrieval_judge_mode=retrieval_judge_mode,
+                    retrieval_judge_provenance=retrieval_judge_provenance
                 )
             except Exception as e:
                 sut_latency = time.perf_counter() - start_time
@@ -159,7 +170,8 @@ async def run_evaluation(
                     passed=False,
                     latency=sut_latency,
                     tokens=0,
-                    judge_mode="fallback"
+                    judge_mode="fallback",
+                    judge_provenance="unknown"
                 )
 
     # Concurrently execute all evaluation tasks
